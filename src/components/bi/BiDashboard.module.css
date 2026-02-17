@@ -1,0 +1,170 @@
+/* Power BI Lite - 3-column layout */
+.biDashboard {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-white);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+/* Main Header Section */
+.biMainHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  z-index: 10;
+}
+
+.biHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.biLogoContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.biLogo {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
+  max-width: 120px;
+}
+
+.biLogoFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  width: 40px;
+}
+
+.biAppTitle {
+  margin: 0;
+  font-size: var(--font-size-21);
+  font-weight: 600;
+  color: var(--color-blue);
+  white-space: nowrap;
+}
+
+.biHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.biHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.biHeader h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-blue);
+}
+
+.biCollectionSelect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.biCollectionSelect label {
+  font-size: 0.875rem;
+  color: var(--color-gray-dark);
+}
+
+.biCollectionSelect input {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  min-width: 140px;
+}
+
+.biHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.biSaveLoad {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.biSaveBtn,
+.biLoadBtn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  color: var(--color-gray-darker);
+}
+
+.biSaveBtn {
+  background: var(--color-blue);
+  color: var(--color-white);
+  border-color: var(--color-blue);
+}
+
+.biSaveBtn:hover,
+.biLoadBtn:hover {
+  opacity: 0.9;
+}
+
+.biStatus {
+  font-size: 0.813rem;
+  color: var(--color-gray-dark);
+}
+
+.biMain {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.biSidebarLeft {
+  width: 260px;
+  min-width: 260px;
+  border-right: 1px solid var(--color-border);
+  background: #fafbfc;
+  overflow-y: auto;
+}
+
+.biCanvas {
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+  background: #f9fafb;
+}
+
+.biSidebarRight {
+  width: 280px;
+  min-width: 280px;
+  border-left: 1px solid var(--color-border);
+  background: #fafbfc;
+  overflow-y: auto;
+}
+

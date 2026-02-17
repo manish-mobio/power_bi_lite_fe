@@ -1,0 +1,13 @@
+/* colors.css */
+
+:root {
+  --color-white: #ffffff;
+  --color-gray-light: #f0f2f5;
+  --color-gray-medium: #ccc;
+  --color-gray-dark: #667085;
+  --color-gray-darker: #8c8c8c;
+  --color-blue: #34657f;
+  --color-background: #f9f9f9;
+  --color-border: #ddd;
+  --color-font-light: #667085;
+}

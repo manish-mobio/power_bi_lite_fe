@@ -1,0 +1,17 @@
+{
+  "extends": ["next/core-web-vitals", "eslint:recommended"],
+  "globals": {
+    "Promise": "readonly"
+  },
+  "overrides": [
+    {
+      "files": ["__tests__/**/*"],
+      "rules": {
+        "no-undef": "off",
+        "no-unused-vars": "off",
+        "no-console": "off",
+        "react/display-name": "off"
+      }
+    }
+  ]
+}

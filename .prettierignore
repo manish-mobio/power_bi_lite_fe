@@ -1,0 +1,8 @@
+.next
+.cache
+package-lock.json
+public
+node_modules
+next-env.d.js
+next.config.js
+yarn.lock

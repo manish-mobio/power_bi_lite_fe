@@ -1,0 +1,221 @@
+/* Dashboard-style toolbar: clean, professional, responsive */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.toolbarLeft {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.toolbarTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-blue, #2563eb);
+  white-space: nowrap;
+}
+
+.collectionWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collectionLabel {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-gray-dark, #6b7280);
+  white-space: nowrap;
+}
+
+.collectionInput {
+  padding: 6px 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  min-width: 120px;
+  max-width: 180px;
+  background: var(--color-white, #fff);
+}
+
+.collectionInput:focus {
+  outline: none;
+  border-color: var(--color-blue, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbarGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbarBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--color-white, #fff);
+  color: var(--color-gray-darker, #374151);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.toolbarBtn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.toolbarBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toolbarBtn.primary {
+  background: var(--color-blue, #2563eb);
+  border-color: var(--color-blue, #2563eb);
+  color: #fff;
+}
+
+.toolbarBtn.primary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.toolbarBtn.success {
+  background: #059669;
+  border-color: #059669;
+  color: #fff;
+}
+
+.toolbarBtn.success:hover:not(:disabled) {
+  background: #047857;
+  border-color: #047857;
+}
+
+.toolbarIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.toolbarLabel {
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .toolbarLabel {
+    display: none;
+  }
+  .toolbarBtn {
+    padding: 8px 10px;
+  }
+  .toolbarBtn .toolbarIcon {
+    margin: 0;
+  }
+}
+
+.dropdownWrap {
+  position: relative;
+}
+
+.toolbarChevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s;
+}
+
+.toolbarChevron.open {
+  transform: rotate(180deg);
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--color-white, #fff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+}
+
+.dropdownItem {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  text-align: left;
+  background: none;
+  color: var(--color-gray-darker, #374151);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.dropdownItem:hover {
+  background: #f3f4f6;
+}
+
+.hiddenFileInput {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.status {
+  font-size: 0.8125rem;
+  color: var(--color-gray-dark, #6b7280);
+  padding: 0 4px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shareUrlWrap {
+  flex-basis: 100%;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border, #e5e7eb);
+}
+
+.shareUrlInput {
+  width: 100%;
+  max-width: 400px;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 6px;
+  background: #f9fafb;
+}
