@@ -65,28 +65,25 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
   };
 
   const toggleField = (fieldName) => {
-    const allNames = allFields.map((f) => f.name);
     let next;
-    if (selectedFields.length === 0) {
-      next = allNames.filter((n) => n !== fieldName);
+    if (selectedFields.includes(fieldName)) {
+      next = selectedFields.filter((f) => f !== fieldName);
     } else {
-      next = selectedFields.includes(fieldName)
-        ? selectedFields.filter((f) => f !== fieldName)
-        : [...selectedFields, fieldName];
+      next = selectedFields.length === 0 ? [fieldName] : [...selectedFields, fieldName];
     }
-    if (next.length === 0) next = allNames;
     handleChange('selectedFields', next);
   };
 
-  const allSelected = allFields.length === 0 || selectedFields.length === 0 || selectedFields.length >= allFields.length;
-  const someSelected = selectedFields.length > 0;
+  // All selected = explicitly all names in selectedFields (empty array means "none selected" for UI)
+  const allSelected = allFields.length > 0 && selectedFields.length === allFields.length;
+  const someSelected = selectedFields.length > 0 && selectedFields.length < allFields.length;
   const selectAllRef = useRef(null);
 
   useEffect(() => {
     if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = someSelected && !allSelected;
+      selectAllRef.current.indeterminate = someSelected;
     }
-  }, [someSelected, allSelected]);
+  }, [someSelected]);
 
   const handleSelectDeselectAll = () => {
     if (allSelected) {
@@ -204,7 +201,7 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
               <label key={f.name} className="bi-config-column-item">
                 <input
                   type="checkbox"
-                  checked={selectedFields.length === 0 || selectedFields.includes(f.name)}
+                  checked={selectedFields.includes(f.name)}
                   onChange={() => toggleField(f.name)}
                 />
                 <span>{f.name}</span>

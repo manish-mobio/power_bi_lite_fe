@@ -1,3 +1,213 @@
+// 18 feb 2026 - in this drag height works works
+import React, { useMemo, useCallback, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
+import { ResponsiveGridLayout } from 'react-grid-layout';
+import SmartChart from './SmartChart';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+
+function cloneLayouts(layouts) {
+  if (!layouts) return {};
+  const result = {};
+  for (const [breakpoint, items] of Object.entries(layouts)) {
+    if (Array.isArray(items)) {
+      result[breakpoint] = items.map((item) => ({
+        i: item.i,
+        x: item.x,
+        y: item.y,
+        w: item.w,
+        h: item.h,
+        minW: item.minW,
+        minH: item.minH,
+        maxW: item.maxW,
+        maxH: item.maxH,
+        static: item.static,
+        moved: item.moved,
+      }));
+    }
+  }
+  return result;
+}
+
+function compactLayout(items, cols = 12) {
+  if (!items.length) return items;
+  const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  const result = [];
+  for (const item of sorted) {
+    const w = item.w || 6;
+    const h = item.h || 2;
+    let placed = false;
+    for (let y = 0; !placed; y++) {
+      for (let x = 0; x <= cols - w; x++) {
+        const overlaps = result.some(
+          (r) => x < r.x + r.w && x + w > r.x && y < r.y + r.h && y + h > r.y
+        );
+        if (!overlaps) {
+          result.push({ ...item, x, y, w, h });
+          placed = true;
+        }
+      }
+    }
+  }
+  return result;
+}
+
+const ChartCanvas = ({
+  charts,
+  selectedChartId,
+  onSelect,
+  onLayoutChange,
+  savedLayouts,
+  onRefresh,
+  onRemove,
+  onDuplicate,
+  onChartUpdate,
+}) => {
+  const layouts = useMemo(() => {
+    const chartIds = charts.map((c) => c.id);
+    const savedLg = savedLayouts?.lg;
+    const hasValidSaved =
+      savedLg?.length === chartIds.length &&
+      chartIds.every((id) => savedLg.some((item) => item.i === id));
+
+    // ✅ If we have valid saved layouts, return them AS-IS
+    // Do NOT run compactLayout here — it was resetting resized heights
+    if (hasValidSaved && savedLayouts) {
+      return cloneLayouts(savedLayouts);
+    }
+
+    // Generate default non-overlapping layouts for new charts
+    const items = [];
+    const itemWidth = 6;
+    const itemHeight = 2;
+
+    charts.forEach((c, idx) => {
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      items.push({
+        i: c.id,
+        x: col * itemWidth,
+        y: row * itemHeight,
+        w: itemWidth,
+        h: itemHeight,
+        minW: 2,
+        minH: 1,
+      });
+    });
+
+    return cloneLayouts({
+      lg: items,
+      md: items.map((l) => ({ ...l, w: 5 })),
+      sm: items.map((l) => ({ ...l, w: 6 })),
+    });
+  }, [charts.map((c) => c.id).join(','), savedLayouts]);
+
+  const syncedLayoutRef = useRef(false);
+  useEffect(() => {
+    const chartIds = charts.map((c) => c.id);
+    const savedLg = savedLayouts?.lg;
+    const hasValidSaved =
+      savedLg?.length === chartIds.length &&
+      chartIds.every((id) => savedLg.some((item) => item.i === id));
+
+    if (
+      charts.length > 0 &&
+      !hasValidSaved &&
+      layouts?.lg?.length === chartIds.length &&
+      onLayoutChange
+    ) {
+      if (!syncedLayoutRef.current) {
+        onLayoutChange(cloneLayouts(layouts));
+        syncedLayoutRef.current = true;
+      }
+    } else if (hasValidSaved) {
+      syncedLayoutRef.current = false;
+    }
+  }, [charts.length, layouts, savedLayouts, onLayoutChange]);
+
+  const handleLayoutChange = useCallback(
+    (layout, allLayouts) => {
+      const cols = { lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 };
+      const constrainedLayouts = {};
+
+      for (const [breakpoint, items] of Object.entries(allLayouts || {})) {
+        const maxCols = cols[breakpoint] || 12;
+        constrainedLayouts[breakpoint] = items.map((item) => ({
+          ...item,
+          x: Math.max(0, Math.min(item.x, maxCols - item.w)),
+          y: Math.max(0, item.y),
+        }));
+      }
+
+      if (onLayoutChange) onLayoutChange(cloneLayouts(constrainedLayouts));
+    },
+    [onLayoutChange]
+  );
+
+  if (charts.length === 0) {
+    return (
+      <div className="bi-canvas-empty">
+        <p>No charts yet. Add a chart from the Fields panel on the left.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bi-chart-canvas">
+      <ResponsiveGridLayout
+        className="layout"
+        layouts={layouts}
+        breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+        cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+        rowHeight={100}
+        onLayoutChange={handleLayoutChange}
+        draggableHandle=".bi-chart-title"
+        // preventCollision={true}
+        // compactType="vertical"
+        preventCollision={false}
+        compactType={null}
+        isDraggable={true}
+        isResizable={true}
+        resizeHandles={['se']}
+      >
+        {charts.map((config) => (
+          <div key={config.id}>
+            <SmartChart
+              config={config}
+              isSelected={selectedChartId === config.id}
+              onSelect={onSelect}
+              onRefresh={onRefresh}
+              onRemove={onRemove}
+              onDuplicate={onDuplicate}
+              onUpdate={
+                onChartUpdate
+                  ? (updates) => onChartUpdate(config.id, updates)
+                  : undefined
+              }
+            />
+          </div>
+        ))}
+      </ResponsiveGridLayout>
+    </div>
+  );
+};
+
+ChartCanvas.propTypes = {
+  charts: PropTypes.array,
+  selectedChartId: PropTypes.string,
+  onSelect: PropTypes.func,
+  onLayoutChange: PropTypes.func,
+  savedLayouts: PropTypes.object,
+  onRefresh: PropTypes.func,
+  onRemove: PropTypes.func,
+  onDuplicate: PropTypes.func,
+  onChartUpdate: PropTypes.func,
+};
+
+export default ChartCanvas;
+
+
+// height and width drap and drop works
 /**
  * Power BI Lite - Chart Canvas
  * Fully flexible resize from all 8 directions (top, bottom, left, right, all corners)
@@ -159,7 +369,9 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
         boxSizing: 'border-box',
         border: isSelected ? '1px solid rgb(214, 225, 233)' : '1px solid transparent',
         borderRadius: 6,
-        
+        // boxShadow: isSelected
+        //   ? '0 0 0 1px #0078d4, 0 4px 24px rgba(0,120,212,0.18)'
+        //   : '0 2px 8px rgba(0,0,0,0.10)',
         background: '#fff',
         zIndex: isSelected ? 10 : 1,
         transition: 'border-color 0.15s, box-shadow 0.15s',

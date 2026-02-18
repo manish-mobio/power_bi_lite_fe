@@ -604,6 +604,22 @@ body {
 .bi-config-select-all input {
   width: auto;
 }
+/* Make resize handle visible */
+.react-resizable-handle {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  bottom: 4px;
+  right: 4px;
+  cursor: se-resize;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 10L10 0M5 10L10 5' stroke='%23999' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.react-resizable-handle:hover {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath d='M0 10L10 0M5 10L10 5' stroke='%23333' stroke-width='1.5'/%3E%3C/svg%3E");
+}
 
 /* Print styles: only the main chart canvas (middle playground) is printed */
 @media print {
