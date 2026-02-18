@@ -245,6 +245,7 @@ const ChartCanvas = ({
   const rectsRef = useRef({});
 
   const handleRectChange = useCallback((id, rect) => {
+    console.log(id);
     rectsRef.current[id] = rect;
     // Debounce saving to parent
     if (onLayoutChange) {
