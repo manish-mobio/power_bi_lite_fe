@@ -102,13 +102,31 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
 
     switch (config.type) {
       case 'pie':
+        return {
+          ...baseOption,
+          series: [
+            {
+              type: 'pie',
+              radius: '70%',
+              avoidLabelOverlap: false,
+              itemStyle: {
+                borderRadius: 8,
+                borderColor: '#fff',
+                borderWidth: 2,
+              },
+              label: { show: true },
+              data: data.map((d) => ({ name: d.name, value: d.value })),
+            },
+          ],
+        };
+
       case 'donut':
         return {
           ...baseOption,
           series: [
             {
               type: 'pie',
-              radius: config.type === 'donut' ? ['35%', '70%'] : ['40%', '70%'],
+              radius: ['35%', '70%'],
               avoidLabelOverlap: false,
               itemStyle: {
                 borderRadius: 8,

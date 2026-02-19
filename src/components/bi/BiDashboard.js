@@ -29,6 +29,7 @@ const BiDashboard = () => {
   const dispatch = useDispatch();
   const { collection, charts, selectedChartId, layouts } = useSelector((state) => state.dashboard);
   const [fields, setFields] = useState([]);
+  const [recordCount, setRecordCount] = useState(null);
   const [saveStatus, setSaveStatus] = useState('');
   const [collectionInput, setCollectionInput] = useState(collection);
   const [shareUrl, setShareUrl] = useState('');
@@ -53,8 +54,19 @@ const BiDashboard = () => {
     }, 500);
   }, [dispatch]);
 
-  const handleFieldsLoaded = useCallback((loadedFields) => {
-    setFields(loadedFields || []);
+  const handleFieldsLoaded = useCallback((data) => {
+    if (Array.isArray(data)) {
+      // Legacy format: just array of fields
+      setFields(data || []);
+      setRecordCount(null);
+    } else if (data && typeof data === 'object') {
+      // New format: object with fields and recordCount
+      setFields(data.fields || data.schema || []);
+      setRecordCount(data.recordCount !== undefined && data.recordCount !== null ? data.recordCount : null);
+    } else {
+      setFields([]);
+      setRecordCount(null);
+    }
   }, []);
   // File upload handler - uploads data to backend and creates collection
   const handleFileUpload = useCallback(async (event) => {
@@ -141,6 +153,8 @@ const BiDashboard = () => {
       }
 
       // Upload data file to backend for parsing and storage
+      console.log('upload file log by manish::bi dashboards');
+
       const response = await fetch('/api/bi/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,17 +181,19 @@ const BiDashboard = () => {
       if (result.collection) {
         // Set fields immediately from upload response (faster than waiting for FieldList fetch)
         if (result.schema && Array.isArray(result.schema) && result.schema.length > 0) {
-          handleFieldsLoaded(result.schema);
+          handleFieldsLoaded({ fields: result.schema, recordCount: result.recordCount });
+        } else if (result.recordCount !== undefined && result.recordCount !== null) {
+          setRecordCount(result.recordCount);
         }
-        
+
         // Set collection in Redux - this will trigger FieldList to fetch schema (as backup/refresh)
         dispatch(setCollection(result.collection));
-        
+
         // Show appropriate message based on whether it was replaced or new
         const statusMsg = result.replaced
           ? `Replaced "${result.collection}" with ${result.recordCount || 0} records`
           : `Uploaded ${result.recordCount || 0} records to "${result.collection}"`;
-        
+
         setSaveStatus(statusMsg);
         setTimeout(() => setSaveStatus(''), 3000);
       } else {
@@ -246,7 +262,7 @@ const BiDashboard = () => {
     [dispatch]
   );
 
- 
+
 
   const handleSaveDashboard = useCallback(async () => {
     setSaveStatus('Saving...');
@@ -544,12 +560,12 @@ const BiDashboard = () => {
         onChange={handleFileUpload}
         aria-hidden
       />
-      
+
       {/* Main Header Section */}
       <header className={styles.biMainHeader}>
         <div className={styles.biHeaderLeft}>
           {/* <div className={styles.biLogoContainer}> */}
-            {/* <img 
+          {/* <img 
               src="/logo.png" 
               alt="Power BI Lite" 
               className={styles.biLogo}
@@ -560,7 +576,7 @@ const BiDashboard = () => {
                 if (fallback) fallback.style.display = 'flex';
               }}
             /> */}
-            {/* <div className={styles.biLogoFallback} style={{ display: 'none' }}>
+          {/* <div className={styles.biLogoFallback} style={{ display: 'none' }}>
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="40" height="40" rx="8" fill="var(--color-blue)"/>
                 <path d="M12 20L18 26L28 14" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
@@ -587,6 +603,7 @@ const BiDashboard = () => {
         shareUrl={shareUrl}
         saveStatus={saveStatus}
         fileInputRef={fileInputRef}
+        recordCount={recordCount}
       />
 
       <div className={`${styles.biMain} bi-main`}>

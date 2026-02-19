@@ -88,7 +88,6 @@ ToolbarDropdown.propTypes = {
 const DashboardToolbar = ({
   collectionInput,
   onCollectionChange,
-  onUpload,
   onExportJSON,
   onExportPDF,
   onPrint,
@@ -98,7 +97,10 @@ const DashboardToolbar = ({
   shareUrl,
   saveStatus,
   fileInputRef,
+  recordCount,
 }) => {
+    console.log('recordCount log by manish::', recordCount);
+    
   return (
     <header className={`${styles.toolbar} bi-dashboard-toolbar`} role="banner">
       <div className={styles.toolbarLeft}>
@@ -116,6 +118,11 @@ const DashboardToolbar = ({
             placeholder="e.g. users"
             aria-label="Collection name"
           />
+          {recordCount !== null && recordCount !== undefined && (
+            <span className={styles.recordCount}>
+              ({typeof recordCount === 'number' ? recordCount.toLocaleString() : recordCount} records)
+            </span>
+          )}
         </div>
       </div>
 
@@ -206,6 +213,7 @@ DashboardToolbar.propTypes = {
   shareUrl: PropTypes.string,
   saveStatus: PropTypes.string,
   fileInputRef: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
+  recordCount: PropTypes.number,
 };
 
 export default DashboardToolbar;
