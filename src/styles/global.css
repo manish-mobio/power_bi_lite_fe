@@ -640,7 +640,8 @@ body {
   .bi-dashboard-toolbar,
   .bi-sidebar-left,
   .bi-sidebar-right,
-  .bi-chart-menu {
+  .bi-chart-menu,
+  .bi-zoom-controls {
     display: none !important;
   }
 
