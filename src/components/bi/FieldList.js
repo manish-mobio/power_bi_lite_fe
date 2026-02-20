@@ -21,7 +21,7 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       .then(async (res) => {
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
-          const text = await res.text();
+          await res.text(); // Consume response
           throw new Error(`Server returned ${res.status}: ${res.statusText}. Collection may not exist.`);
         }
         return res.json();
@@ -29,13 +29,26 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       .then((data) => {
         if (cancelled) return;
         if (Array.isArray(data)) {
+          // Legacy format: just array of fields (no recordCount)
           setFields(data);
-          if (onFieldsLoaded) onFieldsLoaded(data);
+          if (onFieldsLoaded) onFieldsLoaded({ fields: data, recordCount: null });
+        } else if (data?.fields || data?.schema) {
+          // New format: object with fields and recordCount
+          const fieldsData = data.fields || data.schema || [];
+          setFields(fieldsData);
+          if (onFieldsLoaded) {
+            onFieldsLoaded({ 
+              fields: fieldsData, 
+              recordCount: data.recordCount !== undefined ? data.recordCount : null 
+            });
+          }
         } else if (data?.error) {
           setError(data.error);
           setFields([]);
+          if (onFieldsLoaded) onFieldsLoaded({ fields: [] });
         } else {
           setFields([]);
+          if (onFieldsLoaded) onFieldsLoaded({ fields: [] });
         }
       })
       .catch((err) => {
@@ -50,7 +63,7 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       });
 
     return () => { cancelled = true; };
-  }, [collection]);
+  }, [collection, onFieldsLoaded]);
 
   const handleAddChart = (dimension, measureField, measureOp) => {
     if (onAddChart) {
@@ -68,7 +81,21 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
     <div className="bi-field-list">
       <div className="bi-field-list-header">
         <h3>Fields</h3>
+  
+        {/* 🔹 Move Add Chart button to top for better UX */}
+        {!loading && !error && fields.length > 0 && (
+          <button
+            type="button"
+            className="bi-add-chart-btn"
+            onClick={() =>
+              handleAddChart(defaultDimension, defaultMeasure, 'COUNT')
+            }
+          >
+            + Add Chart
+          </button>
+        )}
       </div>
+  
       <div className="bi-field-list-body">
         {loading && <div className="bi-field-loading">Loading fields...</div>}
         {error && <div className="bi-field-error">{error}</div>}
@@ -85,6 +112,7 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
                 </div>
               ))}
             </div>
+  
             <div className="bi-field-group">
               <div className="bi-field-group-title">Measures (aggregate)</div>
               {numberFields.map((f) => (
@@ -93,22 +121,12 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
                 </div>
               ))}
             </div>
-            <div className="bi-field-group">
-              <button
-                type="button"
-                className="bi-add-chart-btn"
-                onClick={() =>
-                  handleAddChart(defaultDimension, defaultMeasure, 'COUNT')
-                }
-              >
-                + Add Chart
-              </button>
-            </div>
           </>
         )}
       </div>
     </div>
   );
+  
 };
 
 FieldList.propTypes = {

@@ -46,31 +46,27 @@ function getHandleStyle(dir) {
   }
 }
 
-/** Single draggable + resizable chart item */
-const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, canvasRef }) => {
+const DEFAULT_CANVAS_MIN = { width: 2400, height: 1600 };
+
+/** Single draggable + resizable chart item; positions relative to playground content */
+const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, contentBounds }) => {
   const [rect, setRect] = useState(initialRect || { x: 40, y: 40, w: 480, h: 300 });
   const rectRef = useRef(rect);
-  const dragRef = useRef(null);
   const containerRef = useRef(null);
 
-  // Keep ref in sync
   useEffect(() => { rectRef.current = rect; }, [rect]);
 
-  // Propagate rect changes up
   useEffect(() => {
     onRectChange?.(config.id, rect);
   }, [rect]);
 
-  const getCanvasBounds = useCallback(() => {
-    if (canvasRef?.current) {
-      return canvasRef.current.getBoundingClientRect();
-    }
-    return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-  }, [canvasRef]);
+  const getCanvasBounds = useCallback(() => ({
+    width: contentBounds.current.width,
+    height: contentBounds.current.height,
+  }), [contentBounds]);
 
-  // ── DRAG (move) ──────────────────────────────────────────────────
   const onDragMouseDown = useCallback((e) => {
-    if (e.target.dataset.handle) return; // don't drag when clicking a handle
+    if (e.target.dataset.handle) return;
     e.preventDefault();
     e.stopPropagation();
     onSelect?.(config.id);
@@ -83,8 +79,8 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
       const canvas = getCanvasBounds();
       const dx = me.clientX - startX;
       const dy = me.clientY - startY;
-      const newX = Math.max(0, Math.min(startRect.x + dx, canvas.width - startRect.w));
-      const newY = Math.max(0, Math.min(startRect.y + dy, canvas.height - startRect.h));
+      const newX = Math.max(0, Math.min(startRect.x + dx, Math.max(canvas.width, startRect.x + startRect.w) - startRect.w));
+      const newY = Math.max(0, Math.min(startRect.y + dy, Math.max(canvas.height, startRect.y + startRect.h) - startRect.h));
       const next = { ...rectRef.current, x: newX, y: newY };
       rectRef.current = next;
       setRect(next);
@@ -97,7 +93,6 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
     window.addEventListener('mouseup', onUp);
   }, [config.id, onSelect, getCanvasBounds]);
 
-  // ── RESIZE ───────────────────────────────────────────────────────
   const onResizeMouseDown = useCallback((e, dir) => {
     e.preventDefault();
     e.stopPropagation();
@@ -114,19 +109,16 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
 
       let { x, y, w, h } = startRect;
 
-      // Horizontal
       if (dir.includes('e')) {
-        w = Math.max(MIN_W, Math.min(startRect.w + dx, canvas.width - x));
+        w = Math.max(MIN_W, startRect.w + dx);
       }
       if (dir.includes('w')) {
         const newX = Math.max(0, Math.min(startRect.x + dx, startRect.x + startRect.w - MIN_W));
         w = startRect.w + (startRect.x - newX);
         x = newX;
       }
-
-      // Vertical
       if (dir.includes('s')) {
-        h = Math.max(MIN_H, Math.min(startRect.h + dy, canvas.height - y));
+        h = Math.max(MIN_H, startRect.h + dy);
       }
       if (dir.includes('n')) {
         const newY = Math.max(0, Math.min(startRect.y + dy, startRect.y + startRect.h - MIN_H));
@@ -150,6 +142,7 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
   return (
     <div
       ref={containerRef}
+      data-chart-id={config.id}
       style={{
         position: 'absolute',
         left: rect.x,
@@ -164,6 +157,7 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
         zIndex: isSelected ? 10 : 1,
         transition: 'border-color 0.15s, box-shadow 0.15s',
         userSelect: 'none',
+        boxShadow: isSelected ? '0 4px 12px rgba(0,0,0,0.08)' : '0 1px 3px rgba(0,0,0,0.06)',
       }}
       onClick={() => onSelect?.(config.id)}
     >
@@ -202,10 +196,9 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
         />
       ))}
 
-      {/* Show handles on hover even when not selected */}
       <style>{`
-        div[data-chartid="${config.id}"]:hover > [data-handle] {
-          opacity: 0.5 !important;
+        [data-chart-id="${config.id}"]:hover > [data-handle] {
+          opacity: 0.6 !important;
         }
       `}</style>
     </div>
@@ -225,44 +218,146 @@ const ChartCanvas = ({
   onDuplicate,
   onChartUpdate,
 }) => {
-  const canvasRef = useRef(null);
+  const scrollContainerRef = useRef(null);
+  const contentRef = useRef(null);
+  const rectsRef = useRef({});
+  const contentBounds = useRef({ width: DEFAULT_CANVAS_MIN.width, height: DEFAULT_CANVAS_MIN.height });
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
-  // Convert saved pixel rects or generate defaults
   const getInitialRect = useCallback((config, idx) => {
     const saved = savedLayouts?.rects?.[config.id];
     if (saved) return saved;
-    // Auto-position in a 2-column grid
     const col = idx % 2;
     const row = Math.floor(idx / 2);
     return {
-      x: col * 500 + 20,
-      y: row * 340 + 20,
+      x: col * 500 + 24,
+      y: row * 340 + 24,
       w: 460,
       h: 300,
     };
   }, [savedLayouts]);
 
-  const rectsRef = useRef({});
+  const [contentSize, setContentSize] = useState(() => ({ width: DEFAULT_CANVAS_MIN.width, height: DEFAULT_CANVAS_MIN.height }));
+
+  const updateContentSize = useCallback(() => {
+    const rects = rectsRef.current;
+    let maxX = DEFAULT_CANVAS_MIN.width;
+    let maxY = DEFAULT_CANVAS_MIN.height;
+    Object.values(rects).forEach((r) => {
+      if (r && typeof r.x === 'number' && typeof r.w === 'number') {
+        maxX = Math.max(maxX, r.x + r.w + 80);
+      }
+      if (r && typeof r.y === 'number' && typeof r.h === 'number') {
+        maxY = Math.max(maxY, r.y + r.h + 80);
+      }
+    });
+    contentBounds.current = { width: maxX, height: maxY };
+    setContentSize({ width: maxX, height: maxY });
+  }, []);
 
   const handleRectChange = useCallback((id, rect) => {
-    console.log(id);
     rectsRef.current[id] = rect;
-    // Debounce saving to parent
     if (onLayoutChange) {
       onLayoutChange({ rects: { ...rectsRef.current } });
     }
+    const rects = rectsRef.current;
+    let maxX = DEFAULT_CANVAS_MIN.width;
+    let maxY = DEFAULT_CANVAS_MIN.height;
+    Object.values(rects).forEach((r) => {
+      if (r && typeof r.x === 'number' && typeof r.w === 'number') {
+        maxX = Math.max(maxX, r.x + r.w + 80);
+      }
+      if (r && typeof r.y === 'number' && typeof r.h === 'number') {
+        maxY = Math.max(maxY, r.y + r.h + 80);
+      }
+    });
+    contentBounds.current = { width: maxX, height: maxY };
+    setContentSize({ width: maxX, height: maxY });
   }, [onLayoutChange]);
+
+  const chartIds = charts.map((c) => c.id).join(',');
+
+  useEffect(() => {
+    const ids = new Set(charts.map((c) => c.id));
+    Object.keys(rectsRef.current).forEach((id) => {
+      if (!ids.has(id)) delete rectsRef.current[id];
+    });
+    charts.forEach((config, idx) => {
+      if (!rectsRef.current[config.id]) {
+        rectsRef.current[config.id] = getInitialRect(config, idx);
+      }
+    });
+    updateContentSize();
+  }, [chartIds, getInitialRect, updateContentSize]);
+
+  // Power BI–style: zoom only with Ctrl+Wheel (or Cmd+Wheel). Plain scroll = pan (no zoom).
+  const handleWheel = useCallback((e) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const isInsidePlayground = el === e.target || el.contains(e.target);
+    if (!isInsidePlayground) return;
+
+    const isZoomIntent = e.ctrlKey || e.metaKey;
+    if (!isZoomIntent) {
+      // Let the container scroll normally (pan left/right/up/down)
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    const currentZoom = zoomRef.current;
+    const rect = el.getBoundingClientRect();
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
+    const contentX = (el.scrollLeft + cursorX) / currentZoom;
+    const contentY = (el.scrollTop + cursorY) / currentZoom;
+    const factor = 1 - e.deltaY * 0.002;
+    const newZoom = Math.max(0.25, Math.min(2, currentZoom * factor));
+    setZoom(newZoom);
+    requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        const c = scrollContainerRef.current;
+        c.scrollLeft = contentX * newZoom - cursorX;
+        c.scrollTop = contentY * newZoom - cursorY;
+      }
+    });
+  }, []);
+
+  const handleZoomIn = useCallback(() => setZoom((prev) => Math.min(2, prev + 0.15)), []);
+  const handleZoomOut = useCallback(() => setZoom((prev) => Math.max(0.25, prev - 0.15)), []);
+  const handleZoomReset = useCallback(() => setZoom(1), []);
+
+  // Keyboard delete
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedChartId) {
+        const t = e.target;
+        if (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA' && !t.isContentEditable) {
+          e.preventDefault();
+          onRemove?.(selectedChartId);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedChartId, onRemove]);
 
   if (charts.length === 0) {
     return (
-      <div className="bi-canvas-empty" style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        color: '#888',
-        fontSize: 15,
-      }}>
+      <div
+        className="bi-canvas-empty"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          minHeight: 400,
+          color: '#64748b',
+          fontSize: 15,
+        }}
+      >
         <p>No charts yet. Add a chart from the Fields panel on the left.</p>
       </div>
     );
@@ -270,36 +365,137 @@ const ChartCanvas = ({
 
   return (
     <div
-      ref={canvasRef}
-      className="bi-chart-canvas"
+      className="bi-chart-canvas bi-playground"
       style={{
         position: 'relative',
         width: '100%',
         height: '100%',
-        minHeight: 600,
-        overflow: 'auto',
-        background: '#f3f4f6',
-      }}
-      onMouseDown={(e) => {
-        // Click on empty canvas = deselect
-        if (e.target === canvasRef.current) onSelect?.(null);
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        background: '#f1f5f9',
       }}
     >
-      {charts.map((config, idx) => (
-        <ChartItem
-          key={config.id}
-          config={config}
-          isSelected={selectedChartId === config.id}
-          onSelect={onSelect}
-          onRefresh={onRefresh}
-          onRemove={onRemove}
-          onDuplicate={onDuplicate}
-          onUpdate={onChartUpdate ? (updates) => onChartUpdate(config.id, updates) : undefined}
-          initialRect={getInitialRect(config, idx)}
-          onRectChange={handleRectChange}
-          canvasRef={canvasRef}
-        />
-      ))}
+      {/* Scrollable area: only this part scrolls */}
+      <div
+        ref={scrollContainerRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}
+        onMouseDown={(e) => {
+          if (e.target === scrollContainerRef.current || e.target === contentRef.current) {
+            onSelect?.(null);
+          }
+        }}
+        onWheel={handleWheel}
+      >
+        <div
+          ref={contentRef}
+          className="bi-playground-content"
+          style={{
+            position: 'relative',
+            width: contentSize.width,
+            height: contentSize.height,
+            minWidth: contentSize.width,
+            minHeight: contentSize.height,
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          {charts.map((config, idx) => (
+            <ChartItem
+              key={config.id}
+              config={config}
+              isSelected={selectedChartId === config.id}
+              onSelect={onSelect}
+              onRefresh={onRefresh}
+              onRemove={onRemove}
+              onDuplicate={onDuplicate}
+              onUpdate={onChartUpdate ? (updates) => onChartUpdate(config.id, updates) : undefined}
+              initialRect={getInitialRect(config, idx)}
+              onRectChange={handleRectChange}
+              contentBounds={contentBounds}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Zoom controls - sticky at bottom right; outside scroll so they never move */}
+      <div
+        className="bi-zoom-controls"
+        style={{
+          position: 'absolute',
+          bottom: 25,
+          right: 25,
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '6px 8px',
+          background: 'white',
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          pointerEvents: 'auto',
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 4,
+            background: '#fff',
+            cursor: 'pointer',
+            fontSize: 16,
+            fontWeight: 600,
+            lineHeight: 1,
+          }}
+          title="Zoom out (Ctrl+Scroll)"
+        >
+          −
+        </button>
+        <span style={{ minWidth: 48, textAlign: 'center', fontSize: 12, fontWeight: 500, color: '#555' }}>
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 4,
+            background: '#fff',
+            cursor: 'pointer',
+            fontSize: 16,
+            fontWeight: 600,
+            lineHeight: 1,
+          }}
+          title="Zoom in (Ctrl+Scroll)"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={handleZoomReset}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 4,
+            background: '#f5f5f5',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 500,
+          }}
+          title="Reset zoom"
+        >
+          Reset
+        </button>
+      </div>
     </div>
   );
 };

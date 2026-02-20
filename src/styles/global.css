@@ -335,6 +335,20 @@ body {
 .bi-field-error {
   color: #dc2626;
 }
+/* Playground: scrollable canvas like Power BI */
+.bi-canvas .bi-chart-canvas.bi-playground {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.bi-playground-content {
+  position: relative;
+}
+
 .bi-chart-canvas {
   width: 100%;
   min-height: 400px;
@@ -626,7 +640,8 @@ body {
   .bi-dashboard-toolbar,
   .bi-sidebar-left,
   .bi-sidebar-right,
-  .bi-chart-menu {
+  .bi-chart-menu,
+  .bi-zoom-controls {
     display: none !important;
   }
 
