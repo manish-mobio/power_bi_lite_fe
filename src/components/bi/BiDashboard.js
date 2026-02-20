@@ -723,6 +723,7 @@ const BiDashboard = () => {
       setTimeout(() => setSaveStatus(''), 3000);
     }
   }, []);
+console.log('testing of git pull');
 
 
   return (
