@@ -172,6 +172,41 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
         };
 
       case 'bar':
+        // Special handling for _id field: ensure all labels are visible
+        const isIdField = config.dimension === '_id';
+        return {
+          ...baseOption,
+          grid: {
+            left: '3%',
+            right: '4%',
+            bottom: isIdField ? '20%' : '3%',
+            top: '10%',
+            containLabel: true,
+          },
+          xAxis: {
+            type: 'category',
+            data: names,
+            axisLabel: {
+              rotate: isIdField ? 45 : 0,
+              interval: 0, // Show all labels
+              showMinLabel: true,
+              showMaxLabel: true,
+              formatter: (value) => {
+                // Truncate long _id values for better display
+                if (isIdField && value && value.length > 15) {
+                  return value.substring(0, 15) + '...';
+                }
+                return value;
+              },
+              textStyle: {
+                fontSize: isIdField ? 11 : 12,
+              },
+            },
+          },
+          yAxis: { type: 'value' },
+          series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+        };
+
       default:
         return {
           ...baseOption,
@@ -180,7 +215,7 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
           series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
         };
     }
-  }, [data, config?.type, isTable]);
+  }, [data, config?.type, config?.dimension, isTable]);
 
   const handleClick = (e) => {
     // Don't select if clicking on menu

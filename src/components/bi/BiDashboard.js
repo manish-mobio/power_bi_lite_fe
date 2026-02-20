@@ -282,28 +282,28 @@ const BiDashboard = () => {
           const json = await res.json();
           const id = json?.id || json?._id;
           if (id) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
             setSaveStatus('Saved');
             const base = typeof window !== 'undefined' ? window.location.origin : '';
             setShareUrl(`${base}/dashboard/${id}`);
           } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
             setSaveStatus('Saved (local)');
           }
         } catch {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
           setSaveStatus('Saved (local)');
         }
       } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
         setSaveStatus('Saved (local)');
       }
     } catch {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
       setSaveStatus('Saved (local)');
     }
     setTimeout(() => setSaveStatus(''), 2000);
-  }, [charts, layouts]);
+  }, [charts, layouts, collection]);
 
   const handleShare = useCallback(() => {
     if (shareUrl && navigator.clipboard?.writeText) {
@@ -317,7 +317,8 @@ const BiDashboard = () => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        const { charts: savedCharts, layouts: savedLayouts } = JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        const { charts: savedCharts, layouts: savedLayouts, collection: savedCollection } = parsed;
         if (savedCharts?.length) {
           // Generate proper layouts if not provided or invalid
           const chartIds = savedCharts.map((c) => c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
@@ -365,7 +366,9 @@ const BiDashboard = () => {
             id: c.id || chartIds[idx],
           }));
 
-          dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts }));
+          const loadedCollection = savedCollection || (savedCharts[0] && savedCharts[0].collection) || collection;
+          dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts, collection: loadedCollection }));
+          setCollectionInput(loadedCollection);
           setSaveStatus('Loaded');
           setTimeout(() => setSaveStatus(''), 2000);
         }
@@ -424,7 +427,9 @@ const BiDashboard = () => {
                 id: c.id || chartIds[idx],
               }));
 
-              dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts }));
+              const loadedCollection = (chartsWithIds[0] && chartsWithIds[0].collection) || (latest && latest.collection) || collection;
+              dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts, collection: loadedCollection }));
+              setCollectionInput(loadedCollection);
               setSaveStatus('Loaded from server');
             } else {
               setSaveStatus('No saved dashboard');
@@ -442,8 +447,107 @@ const BiDashboard = () => {
   }, [dispatch]);
 
   // Print only the chart canvas (middle playground); CSS hides header/sidebars
-  const handlePrintDashboard = useCallback(() => {
-    window.print();
+  // const handlePrintDashboard = useCallback(() => {
+  //   window.print();
+  // }, []);
+  const handlePrintDashboard = useCallback(async () => {
+    setSaveStatus('Preparing print...');
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      // Capture only the charts area (exclude zoom controls)
+      const printArea = document.querySelector('.bi-playground-content');
+      if (!printArea) {
+        setSaveStatus('Canvas not found');
+        setTimeout(() => setSaveStatus(''), 2000);
+        return;
+      }
+
+      const canvasElement = await html2canvas(printArea, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+      });
+  
+      const imgData = canvasElement.toDataURL('image/png');
+  
+      // Open a minimal print window with only the canvas image
+      const printWindow = window.open('', '_blank', 'width=1200,height=800');
+      if (!printWindow) {
+        setSaveStatus('Popup blocked — allow popups and try again');
+        setTimeout(() => setSaveStatus(''), 3000);
+        return;
+      }
+  
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Dashboard Print</title>
+            <style>
+              * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+              body {
+                background: #ffffff;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+              }
+              .print-container {
+                width: 100%;
+              }
+              img {
+                width: 100%;
+                height: auto;
+                display: block;
+              }
+              @media print {
+                * {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                body {
+                  background: #ffffff !important;
+                }
+                img {
+                  width: 100% !important;
+                  height: auto !important;
+                  page-break-inside: avoid;
+                }
+                @page {
+                  size: landscape;
+                  margin: 8mm;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="print-container">
+              <img src="${imgData}" alt="Dashboard" />
+            </div>
+            <script>
+              // Auto-trigger print once image is loaded
+              const img = document.querySelector('img');
+              img.onload = () => {
+                setTimeout(() => {
+                  window.print();
+                  window.close();
+                }, 300);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+  
+      printWindow.document.close();
+      setSaveStatus('Print dialog opened');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (error) {
+      console.error('Print failed', error);
+      setSaveStatus('Print failed');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
   }, []);
 
   // Download JSON config
@@ -514,32 +618,103 @@ const BiDashboard = () => {
   }, []);
 
   // Download PDF (optional)
+  // const handleDownloadPDF = useCallback(async () => {
+  //   setSaveStatus('Generating PDF...');
+  //   try {
+  //     const html2canvas = (await import('html2canvas')).default;
+  //     const { jsPDF } = await import('jspdf');
+  //     // Capture only the charts area (exclude zoom controls)
+  //     const printArea = document.querySelector('.bi-playground-content');
+  //     if (!printArea) {
+  //       setSaveStatus('Canvas not found');
+  //       setTimeout(() => setSaveStatus(''), 2000);
+  //       return;
+  //     }
+
+  //     const canvasElement = await html2canvas(printArea, {
+  //       backgroundColor: '#ffffff',
+  //       scale: 2,
+  //     });
+
+  //     const imgData = canvasElement.toDataURL('image/png');
+  //     const pdf = new jsPDF('landscape', 'mm', 'a4');
+  //     const imgWidth = 297;
+  //     const imgHeight = (canvasElement.height * imgWidth) / canvasElement.width;
+
+  //     pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+  //     pdf.save(`dashboard-${Date.now()}.pdf`);
+
+  //     setSaveStatus('PDF downloaded');
+  //     setTimeout(() => setSaveStatus(''), 2000);
+  //   } catch (error) {
+  //     console.error('PDF export failed', error);
+  //     setSaveStatus('PDF export failed');
+  //     setTimeout(() => setSaveStatus(''), 3000);
+  //   }
+  // }, []);
   const handleDownloadPDF = useCallback(async () => {
     setSaveStatus('Generating PDF...');
     try {
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
-
-      const canvas = document.querySelector('.bi-chart-canvas');
-      if (!canvas) {
+  
+      const printArea = document.querySelector('.bi-playground-content');
+      if (!printArea) {
         setSaveStatus('Canvas not found');
         setTimeout(() => setSaveStatus(''), 2000);
         return;
       }
-
-      const canvasElement = await html2canvas(canvas, {
+  
+      const canvasElement = await html2canvas(printArea, {
         backgroundColor: '#ffffff',
-        scale: 2,
+        scale: 4,                  // ✅ 4x = sharp on retina/print (was 2x)
+        useCORS: true,             // ✅ fixes blank images from cross-origin sources
+        allowTaint: false,
+        logging: false,
+        imageTimeout: 15000,
+        removeContainer: true,
       });
-
+  
+      // Use PNG for lossless quality — never use JPEG for charts/text
       const imgData = canvasElement.toDataURL('image/png');
-      const pdf = new jsPDF('landscape', 'mm', 'a4');
-      const imgWidth = 297;
-      const imgHeight = (canvasElement.height * imgWidth) / canvasElement.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+  
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+        compress: false,           // ✅ no compression = best quality
+      });
+  
+      const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
+  
+      const imgWidth = pageWidth;
+      const imgHeight = (canvasElement.height * pageWidth) / canvasElement.width;
+  
+      // If content is taller than one page — add multiple pages
+      if (imgHeight <= pageHeight) {
+        // Single page — center vertically
+        const yOffset = (pageHeight - imgHeight) / 2;
+        pdf.addImage(imgData, 'PNG', 0, yOffset, imgWidth, imgHeight, '', 'FAST');
+      } else {
+        // Multi-page — slice image across pages
+        let remainingHeight = imgHeight;
+        let yPosition = 0;
+  
+        while (remainingHeight > 0) {
+          pdf.addImage(
+            imgData, 'PNG',
+            0, -yPosition,
+            imgWidth, imgHeight,
+            '', 'FAST'
+          );
+          remainingHeight -= pageHeight;
+          yPosition += pageHeight;
+          if (remainingHeight > 0) pdf.addPage();
+        }
+      }
+  
       pdf.save(`dashboard-${Date.now()}.pdf`);
-
       setSaveStatus('PDF downloaded');
       setTimeout(() => setSaveStatus(''), 2000);
     } catch (error) {
