@@ -95,9 +95,32 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
     const names = data.map((d) => d.name);
     const values = data.map((d) => d.value);
 
+    // Shared X-axis label config: show all labels, rotate when many/long, prevent truncation
+    const hasManyCategories = names.length > 6;
+    const isIdOrLongLabels = config.dimension === '_id' || names.some((n) => n && String(n).length > 10);
+    const needRotate = hasManyCategories || isIdOrLongLabels;
+    const gridBottom = config.dimension === '_id' ? '22%' : needRotate ? '18%' : '3%';
+    const categoryXAxis = {
+      type: 'category',
+      data: names,
+      axisLabel: {
+        interval: 0,
+        rotate: needRotate ? 45 : 0,
+        showMinLabel: true,
+        showMaxLabel: true,
+        formatter: (value) => {
+          if (!value) return value;
+          const str = String(value);
+          if (str.length > 14) return str.substring(0, 14) + '…';
+          return str;
+        },
+        textStyle: { fontSize: needRotate ? 11 : 12 },
+      },
+    };
+
     const baseOption = {
       tooltip: { trigger: config.type === 'pie' || config.type === 'donut' ? 'item' : 'axis' },
-      grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
+      grid: { left: '3%', right: '4%', bottom: gridBottom, top: '10%', containLabel: true },
     };
 
     switch (config.type) {
@@ -142,7 +165,7 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       case 'line':
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: names, boundaryGap: false },
+          xAxis: { ...categoryXAxis, boundaryGap: false },
           yAxis: { type: 'value' },
           series: [{ type: 'line', data: values, smooth: true }],
         };
@@ -150,59 +173,46 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       case 'area':
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: names, boundaryGap: false },
+          xAxis: { ...categoryXAxis, boundaryGap: false },
           yAxis: { type: 'value' },
           series: [{ type: 'line', data: values, smooth: true, areaStyle: {} }],
         };
 
       case 'stackedBar':
+        // Stacked bar: horizontal bars (category on Y-axis, value on X) — visually distinct from vertical bar
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: names },
-          yAxis: { type: 'value' },
-          series: [{ type: 'bar', data: values, stack: 'total', itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+          grid: { left: '15%', right: '4%', bottom: '8%', top: '10%', containLabel: true },
+          xAxis: { type: 'value' },
+          yAxis: {
+            type: 'category',
+            data: names,
+            axisLabel: {
+              interval: 0,
+              formatter: (value) => {
+                if (!value) return value;
+                const str = String(value);
+                if (str.length > 14) return str.substring(0, 14) + '…';
+                return str;
+              },
+              textStyle: { fontSize: 12 },
+            },
+          },
+          series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [0, 4, 4, 0] } }],
         };
 
       case 'scatter':
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: names },
+          xAxis: categoryXAxis,
           yAxis: { type: 'value' },
           series: [{ type: 'scatter', data: values.map((v, i) => [i, v]), symbolSize: 10 }],
         };
 
       case 'bar':
-        // Special handling for _id field: ensure all labels are visible
-        const isIdField = config.dimension === '_id';
         return {
           ...baseOption,
-          grid: {
-            left: '3%',
-            right: '4%',
-            bottom: isIdField ? '20%' : '3%',
-            top: '10%',
-            containLabel: true,
-          },
-          xAxis: {
-            type: 'category',
-            data: names,
-            axisLabel: {
-              rotate: isIdField ? 45 : 0,
-              interval: 0, // Show all labels
-              showMinLabel: true,
-              showMaxLabel: true,
-              formatter: (value) => {
-                // Truncate long _id values for better display
-                if (isIdField && value && value.length > 15) {
-                  return value.substring(0, 15) + '...';
-                }
-                return value;
-              },
-              textStyle: {
-                fontSize: isIdField ? 11 : 12,
-              },
-            },
-          },
+          xAxis: categoryXAxis,
           yAxis: { type: 'value' },
           series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
         };
@@ -210,7 +220,7 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       default:
         return {
           ...baseOption,
-          xAxis: { type: 'category', data: names },
+          xAxis: categoryXAxis,
           yAxis: { type: 'value' },
           series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
         };

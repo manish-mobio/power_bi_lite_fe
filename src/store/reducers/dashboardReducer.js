@@ -7,7 +7,7 @@ import { createSlice } from '@reduxjs/toolkit';
 const generateId = () => `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 const initialState = {
-  collection: 'users',
+  collection: '',
   charts: [],
   selectedChartId: null,
   layouts: {},
@@ -18,7 +18,7 @@ const dashboardSlice = createSlice({
   initialState,
   reducers: {
     setCollection: (state, action) => {
-      state.collection = action.payload || 'users';
+      state.collection = action.payload || '';
     },
 
     addChart: (state, action) => {
@@ -114,7 +114,7 @@ function createDefaultChartConfig() {
   return {
     id: generateId(),
     type: 'bar',
-    collection: 'users',
+    collection: '',
     dimension: 'gender',
     measure: { field: 'id', op: 'COUNT' },
     limit: 10,

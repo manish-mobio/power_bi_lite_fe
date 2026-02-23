@@ -49,7 +49,7 @@ function getHandleStyle(dir) {
 const DEFAULT_CANVAS_MIN = { width: 2400, height: 1600 };
 
 /** Single draggable + resizable chart item; positions relative to playground content */
-const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, contentBounds }) => {
+const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, contentBounds, isExportMode }) => {
   const [rect, setRect] = useState(initialRect || { x: 40, y: 40, w: 480, h: 300 });
   const rectRef = useRef(rect);
   const containerRef = useRef(null);
@@ -167,6 +167,7 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
         style={{ width: '100%', height: '100%', cursor: 'default' }}
       >
         <SmartChart
+          // isExportMode={isExportMode}
           config={config}
           isSelected={isSelected}
           onSelect={onSelect}
@@ -209,6 +210,7 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
 
 const ChartCanvas = ({
   charts,
+  // isExportMode,
   selectedChartId,
   onSelect,
   onLayoutChange,

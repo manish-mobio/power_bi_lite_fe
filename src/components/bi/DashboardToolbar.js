@@ -149,7 +149,7 @@ const DashboardToolbar = ({
     setDropdownOpen(false);
   };
 
-  console.log('recordCount log by manish::', recordCount);
+  // console.log('recordCount log by manish::', recordCount);
     
   return (
     <header className={`${styles.toolbar} bi-dashboard-toolbar`} role="banner">

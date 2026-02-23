@@ -322,8 +322,12 @@ body {
   cursor: pointer;
   margin-top: 8px;
 }
-.bi-add-chart-btn:hover {
+.bi-add-chart-btn:hover:not(:disabled) {
   opacity: 0.9;
+}
+.bi-add-chart-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .bi-field-loading,
 .bi-field-error,
