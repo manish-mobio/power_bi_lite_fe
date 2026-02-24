@@ -29,6 +29,7 @@ const BiDashboard = () => {
   const dispatch = useDispatch();
   const { collection, charts, selectedChartId, layouts } = useSelector((state) => state.dashboard);
   const [fields, setFields] = useState([]);
+  const [recordCount, setRecordCount] = useState(null);
   const [saveStatus, setSaveStatus] = useState('');
   const [collectionInput, setCollectionInput] = useState(collection);
   const [shareUrl, setShareUrl] = useState('');
@@ -53,8 +54,19 @@ const BiDashboard = () => {
     }, 500);
   }, [dispatch]);
 
-  const handleFieldsLoaded = useCallback((loadedFields) => {
-    setFields(loadedFields || []);
+  const handleFieldsLoaded = useCallback((data) => {
+    if (Array.isArray(data)) {
+      // Legacy format: just array of fields
+      setFields(data || []);
+      setRecordCount(null);
+    } else if (data && typeof data === 'object') {
+      // New format: object with fields and recordCount
+      setFields(data.fields || data.schema || []);
+      setRecordCount(data.recordCount !== undefined && data.recordCount !== null ? data.recordCount : null);
+    } else {
+      setFields([]);
+      setRecordCount(null);
+    }
   }, []);
   // File upload handler - uploads data to backend and creates collection
   const handleFileUpload = useCallback(async (event) => {
@@ -141,6 +153,8 @@ const BiDashboard = () => {
       }
 
       // Upload data file to backend for parsing and storage
+      console.log('upload file log by manish::bi dashboards');
+
       const response = await fetch('/api/bi/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -167,17 +181,19 @@ const BiDashboard = () => {
       if (result.collection) {
         // Set fields immediately from upload response (faster than waiting for FieldList fetch)
         if (result.schema && Array.isArray(result.schema) && result.schema.length > 0) {
-          handleFieldsLoaded(result.schema);
+          handleFieldsLoaded({ fields: result.schema, recordCount: result.recordCount });
+        } else if (result.recordCount !== undefined && result.recordCount !== null) {
+          setRecordCount(result.recordCount);
         }
-        
+
         // Set collection in Redux - this will trigger FieldList to fetch schema (as backup/refresh)
         dispatch(setCollection(result.collection));
-        
+
         // Show appropriate message based on whether it was replaced or new
         const statusMsg = result.replaced
           ? `Replaced "${result.collection}" with ${result.recordCount || 0} records`
           : `Uploaded ${result.recordCount || 0} records to "${result.collection}"`;
-        
+
         setSaveStatus(statusMsg);
         setTimeout(() => setSaveStatus(''), 3000);
       } else {
@@ -246,7 +262,7 @@ const BiDashboard = () => {
     [dispatch]
   );
 
- 
+
 
   const handleSaveDashboard = useCallback(async () => {
     setSaveStatus('Saving...');
@@ -266,28 +282,28 @@ const BiDashboard = () => {
           const json = await res.json();
           const id = json?.id || json?._id;
           if (id) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
             setSaveStatus('Saved');
             const base = typeof window !== 'undefined' ? window.location.origin : '';
             setShareUrl(`${base}/dashboard/${id}`);
           } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
             setSaveStatus('Saved (local)');
           }
         } catch {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
           setSaveStatus('Saved (local)');
         }
       } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
         setSaveStatus('Saved (local)');
       }
     } catch {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
       setSaveStatus('Saved (local)');
     }
     setTimeout(() => setSaveStatus(''), 2000);
-  }, [charts, layouts]);
+  }, [charts, layouts, collection]);
 
   const handleShare = useCallback(() => {
     if (shareUrl && navigator.clipboard?.writeText) {
@@ -301,7 +317,8 @@ const BiDashboard = () => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        const { charts: savedCharts, layouts: savedLayouts } = JSON.parse(stored);
+        const parsed = JSON.parse(stored);
+        const { charts: savedCharts, layouts: savedLayouts, collection: savedCollection } = parsed;
         if (savedCharts?.length) {
           // Generate proper layouts if not provided or invalid
           const chartIds = savedCharts.map((c) => c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
@@ -349,7 +366,9 @@ const BiDashboard = () => {
             id: c.id || chartIds[idx],
           }));
 
-          dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts }));
+          const loadedCollection = savedCollection || (savedCharts[0] && savedCharts[0].collection) || collection;
+          dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts, collection: loadedCollection }));
+          setCollectionInput(loadedCollection);
           setSaveStatus('Loaded');
           setTimeout(() => setSaveStatus(''), 2000);
         }
@@ -408,7 +427,9 @@ const BiDashboard = () => {
                 id: c.id || chartIds[idx],
               }));
 
-              dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts }));
+              const loadedCollection = (chartsWithIds[0] && chartsWithIds[0].collection) || (latest && latest.collection) || collection;
+              dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts, collection: loadedCollection }));
+              setCollectionInput(loadedCollection);
               setSaveStatus('Loaded from server');
             } else {
               setSaveStatus('No saved dashboard');
@@ -426,8 +447,107 @@ const BiDashboard = () => {
   }, [dispatch]);
 
   // Print only the chart canvas (middle playground); CSS hides header/sidebars
-  const handlePrintDashboard = useCallback(() => {
-    window.print();
+  // const handlePrintDashboard = useCallback(() => {
+  //   window.print();
+  // }, []);
+  const handlePrintDashboard = useCallback(async () => {
+    setSaveStatus('Preparing print...');
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      // Capture only the charts area (exclude zoom controls)
+      const printArea = document.querySelector('.bi-playground-content');
+      if (!printArea) {
+        setSaveStatus('Canvas not found');
+        setTimeout(() => setSaveStatus(''), 2000);
+        return;
+      }
+
+      const canvasElement = await html2canvas(printArea, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+      });
+  
+      const imgData = canvasElement.toDataURL('image/png');
+  
+      // Open a minimal print window with only the canvas image
+      const printWindow = window.open('', '_blank', 'width=1200,height=800');
+      if (!printWindow) {
+        setSaveStatus('Popup blocked — allow popups and try again');
+        setTimeout(() => setSaveStatus(''), 3000);
+        return;
+      }
+  
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Dashboard Print</title>
+            <style>
+              * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+              body {
+                background: #ffffff;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+              }
+              .print-container {
+                width: 100%;
+              }
+              img {
+                width: 100%;
+                height: auto;
+                display: block;
+              }
+              @media print {
+                * {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                body {
+                  background: #ffffff !important;
+                }
+                img {
+                  width: 100% !important;
+                  height: auto !important;
+                  page-break-inside: avoid;
+                }
+                @page {
+                  size: landscape;
+                  margin: 8mm;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="print-container">
+              <img src="${imgData}" alt="Dashboard" />
+            </div>
+            <script>
+              // Auto-trigger print once image is loaded
+              const img = document.querySelector('img');
+              img.onload = () => {
+                setTimeout(() => {
+                  window.print();
+                  window.close();
+                }, 300);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+  
+      printWindow.document.close();
+      setSaveStatus('Print dialog opened');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (error) {
+      console.error('Print failed', error);
+      setSaveStatus('Print failed');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
   }, []);
 
   // Download JSON config
@@ -498,32 +618,103 @@ const BiDashboard = () => {
   }, []);
 
   // Download PDF (optional)
+  // const handleDownloadPDF = useCallback(async () => {
+  //   setSaveStatus('Generating PDF...');
+  //   try {
+  //     const html2canvas = (await import('html2canvas')).default;
+  //     const { jsPDF } = await import('jspdf');
+  //     // Capture only the charts area (exclude zoom controls)
+  //     const printArea = document.querySelector('.bi-playground-content');
+  //     if (!printArea) {
+  //       setSaveStatus('Canvas not found');
+  //       setTimeout(() => setSaveStatus(''), 2000);
+  //       return;
+  //     }
+
+  //     const canvasElement = await html2canvas(printArea, {
+  //       backgroundColor: '#ffffff',
+  //       scale: 2,
+  //     });
+
+  //     const imgData = canvasElement.toDataURL('image/png');
+  //     const pdf = new jsPDF('landscape', 'mm', 'a4');
+  //     const imgWidth = 297;
+  //     const imgHeight = (canvasElement.height * imgWidth) / canvasElement.width;
+
+  //     pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+  //     pdf.save(`dashboard-${Date.now()}.pdf`);
+
+  //     setSaveStatus('PDF downloaded');
+  //     setTimeout(() => setSaveStatus(''), 2000);
+  //   } catch (error) {
+  //     console.error('PDF export failed', error);
+  //     setSaveStatus('PDF export failed');
+  //     setTimeout(() => setSaveStatus(''), 3000);
+  //   }
+  // }, []);
   const handleDownloadPDF = useCallback(async () => {
     setSaveStatus('Generating PDF...');
     try {
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
-
-      const canvas = document.querySelector('.bi-chart-canvas');
-      if (!canvas) {
+  
+      const printArea = document.querySelector('.bi-playground-content');
+      if (!printArea) {
         setSaveStatus('Canvas not found');
         setTimeout(() => setSaveStatus(''), 2000);
         return;
       }
-
-      const canvasElement = await html2canvas(canvas, {
+  
+      const canvasElement = await html2canvas(printArea, {
         backgroundColor: '#ffffff',
-        scale: 2,
+        scale: 4,                  // ✅ 4x = sharp on retina/print (was 2x)
+        useCORS: true,             // ✅ fixes blank images from cross-origin sources
+        allowTaint: false,
+        logging: false,
+        imageTimeout: 15000,
+        removeContainer: true,
       });
-
+  
+      // Use PNG for lossless quality — never use JPEG for charts/text
       const imgData = canvasElement.toDataURL('image/png');
-      const pdf = new jsPDF('landscape', 'mm', 'a4');
-      const imgWidth = 297;
-      const imgHeight = (canvasElement.height * imgWidth) / canvasElement.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+  
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4',
+        compress: false,           // ✅ no compression = best quality
+      });
+  
+      const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
+      const pageHeight = pdf.internal.pageSize.getHeight(); // 210mm
+  
+      const imgWidth = pageWidth;
+      const imgHeight = (canvasElement.height * pageWidth) / canvasElement.width;
+  
+      // If content is taller than one page — add multiple pages
+      if (imgHeight <= pageHeight) {
+        // Single page — center vertically
+        const yOffset = (pageHeight - imgHeight) / 2;
+        pdf.addImage(imgData, 'PNG', 0, yOffset, imgWidth, imgHeight, '', 'FAST');
+      } else {
+        // Multi-page — slice image across pages
+        let remainingHeight = imgHeight;
+        let yPosition = 0;
+  
+        while (remainingHeight > 0) {
+          pdf.addImage(
+            imgData, 'PNG',
+            0, -yPosition,
+            imgWidth, imgHeight,
+            '', 'FAST'
+          );
+          remainingHeight -= pageHeight;
+          yPosition += pageHeight;
+          if (remainingHeight > 0) pdf.addPage();
+        }
+      }
+  
       pdf.save(`dashboard-${Date.now()}.pdf`);
-
       setSaveStatus('PDF downloaded');
       setTimeout(() => setSaveStatus(''), 2000);
     } catch (error) {
@@ -532,6 +723,7 @@ const BiDashboard = () => {
       setTimeout(() => setSaveStatus(''), 3000);
     }
   }, []);
+console.log('testing of git pull');
 
 
   return (
@@ -544,12 +736,12 @@ const BiDashboard = () => {
         onChange={handleFileUpload}
         aria-hidden
       />
-      
+
       {/* Main Header Section */}
       <header className={styles.biMainHeader}>
         <div className={styles.biHeaderLeft}>
           {/* <div className={styles.biLogoContainer}> */}
-            {/* <img 
+          {/* <img 
               src="/logo.png" 
               alt="Power BI Lite" 
               className={styles.biLogo}
@@ -560,7 +752,7 @@ const BiDashboard = () => {
                 if (fallback) fallback.style.display = 'flex';
               }}
             /> */}
-            {/* <div className={styles.biLogoFallback} style={{ display: 'none' }}>
+          {/* <div className={styles.biLogoFallback} style={{ display: 'none' }}>
               <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="40" height="40" rx="8" fill="var(--color-blue)"/>
                 <path d="M12 20L18 26L28 14" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
@@ -587,6 +779,7 @@ const BiDashboard = () => {
         shareUrl={shareUrl}
         saveStatus={saveStatus}
         fileInputRef={fileInputRef}
+        recordCount={recordCount}
       />
 
       <div className={`${styles.biMain} bi-main`}>
