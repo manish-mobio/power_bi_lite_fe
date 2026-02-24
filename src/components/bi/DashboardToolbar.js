@@ -12,6 +12,9 @@ import {
   AiOutlineFolderOpen,
   AiOutlineShareAlt,
   AiOutlineDown,
+  AiOutlineTable,
+  AiOutlinePicture,
+  AiOutlineFilter,
 } from 'react-icons/ai';
 import styles from './DashboardToolbar.module.css';
 
@@ -98,11 +101,62 @@ const DashboardToolbar = ({
   saveStatus,
   fileInputRef,
   recordCount,
+  onViewData,
+  dashboardName,
+  onDashboardNameChange,
+  savedDashboards,
+  onLoadDashboardById,
+  dashboardLogo,
+  onSetLogo,
+  onClearLogo,
+  dataFilter,
+  onDataFilterChange,
+  dateFields = [],
 }) => {
   const [collections, setCollections] = useState([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [loadDropdownOpen, setLoadDropdownOpen] = useState(false);
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const loadDropdownRef = useRef(null);
+  const filterDropdownRef = useRef(null);
+
+  const [filterDraft, setFilterDraft] = useState(() => ({
+    field: dateFields[0]?.name || '',
+    type: 'date',
+    value: '',
+    from: '',
+    to: '',
+  }));
+
+  const filterField = filterDraft.field || dateFields[0]?.name || '';
+  const filterType = filterDraft.type;
+  const filterValue = filterDraft.value;
+  const filterFrom = filterDraft.from;
+  const filterTo = filterDraft.to;
+
+  const dateFieldNames = dateFields.map((f) => f.name).join(',');
+  useEffect(() => {
+    if (dataFilter) {
+      setFilterDraft((d) => ({
+        field: dataFilter.field || dateFields[0]?.name || d.field,
+        type: dataFilter.type || 'date',
+        value: dataFilter.value ?? '',
+        from: dataFilter.from ?? '',
+        to: dataFilter.to ?? '',
+      }));
+    } else {
+      setFilterDraft((d) => ({
+        ...d,
+        field: dateFields[0]?.name || d.field,
+        type: 'date',
+        value: '',
+        from: '',
+        to: '',
+      }));
+    }
+  }, [dataFilter, dateFieldNames]);
 
   // Fetch collections list on mount
   useEffect(() => {
@@ -131,18 +185,45 @@ const DashboardToolbar = ({
     return () => { cancelled = true; };
   }, []);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setDropdownOpen(false);
-      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setDropdownOpen(false);
+      if (loadDropdownRef.current && !loadDropdownRef.current.contains(e.target)) setLoadDropdownOpen(false);
+      if (filterDropdownRef.current && !filterDropdownRef.current.contains(e.target)) setFilterDropdownOpen(false);
     };
-    if (dropdownOpen) {
+    if (dropdownOpen || loadDropdownOpen || filterDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [dropdownOpen]);
+  }, [dropdownOpen, loadDropdownOpen, filterDropdownOpen]);
+
+  const applyFilter = () => {
+    const field = filterField || dateFields[0]?.name;
+    if (!field) return;
+    if (filterType === 'date') {
+      if (filterFrom || filterTo) {
+        onDataFilterChange?.({ field, type: 'date', from: filterFrom || undefined, to: filterTo || undefined });
+      } else {
+        onDataFilterChange?.(null);
+      }
+    } else {
+      if (filterValue) {
+        onDataFilterChange?.({ field, type: filterType, value: filterValue.trim() });
+      } else {
+        onDataFilterChange?.(null);
+      }
+    }
+    setFilterDropdownOpen(false);
+  };
+
+  const clearFilter = () => {
+    onDataFilterChange?.(null);
+    setFilterDraft((d) => ({ ...d, value: '', from: '', to: '' }));
+    setFilterDropdownOpen(false);
+  };
+
+  const updateDraft = (updates) => setFilterDraft((d) => ({ ...d, ...updates }));
 
   const handleSelectCollection = (collectionName) => {
     onCollectionChange(collectionName);
@@ -184,9 +265,36 @@ const DashboardToolbar = ({
             </span>
           )}
         </div>
+        {onDashboardNameChange && (
+          <div className={styles.dashboardNameWrap}>
+            <label htmlFor="bi-toolbar-dashboard-name" className={styles.collectionLabel}>
+              Dashboard name
+            </label>
+            <input
+              id="bi-toolbar-dashboard-name"
+              type="text"
+              className={styles.dashboardNameInput}
+              placeholder="My Dashboard"
+              value={dashboardName ?? ''}
+              onChange={(e) => onDashboardNameChange(e.target.value)}
+              aria-label="Dashboard name for save/export"
+            />
+          </div>
+        )}
       </div>
 
       <div className={styles.toolbarRight}>
+        {onViewData && (
+          <div className={styles.toolbarGroup}>
+            <ToolbarButton
+              icon={AiOutlineTable}
+              label="View"
+              onClick={onViewData}
+              disabled={!collectionInput?.trim()}
+              title={collectionInput?.trim() ? 'View collection data as table' : 'Select or upload a collection first'}
+            />
+          </div>
+        )}
         <div className={styles.toolbarGroup}>
           <ToolbarButton
             icon={AiOutlineCloudUpload}
@@ -214,8 +322,118 @@ const DashboardToolbar = ({
             >
               Export PDF
             </button>
+            {onSetLogo && (
+              <button
+                type="button"
+                className={styles.dropdownItem}
+                onClick={() => { onSetLogo(); }}
+                role="menuitem"
+              >
+                <AiOutlinePicture style={{ marginRight: 6, verticalAlign: 'middle' }} aria-hidden />
+                Set dashboard logo
+              </button>
+            )}
+            {onClearLogo && dashboardLogo && (
+              <button
+                type="button"
+                className={styles.dropdownItem}
+                onClick={() => { onClearLogo(); }}
+                role="menuitem"
+              >
+                Clear logo
+              </button>
+            )}
           </ToolbarDropdown>
         </div>
+
+        {dateFields.length > 0 && onDataFilterChange && (
+          <div className={styles.toolbarGroup} ref={filterDropdownRef}>
+            <div className={styles.dropdownWrap}>
+              <button
+                type="button"
+                className={styles.toolbarBtn}
+                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+                title="Filter data by date"
+                aria-label="Filters"
+                aria-expanded={filterDropdownOpen}
+                aria-haspopup="true"
+              >
+                <AiOutlineFilter className={styles.toolbarIcon} aria-hidden />
+                <span className={styles.toolbarLabel}>Filters</span>
+                {dataFilter && <span className={styles.filterBadge} title="Active" aria-hidden>●</span>}
+                <AiOutlineDown className={`${styles.toolbarChevron} ${filterDropdownOpen ? styles.open : ''}`} aria-hidden />
+              </button>
+              {filterDropdownOpen && (
+                <div className={styles.filterDropdownMenu} role="dialog" onClick={(e) => e.stopPropagation()}>
+                  <div className={styles.filterRow}>
+                    <label className={styles.filterLabel}>Date field</label>
+                    <select
+                      className={styles.filterSelect}
+                      value={filterField}
+                      onChange={(e) => updateDraft({ field: e.target.value })}
+                    >
+                      {dateFields.map((f) => (
+                        <option key={f.name} value={f.name}>{f.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.filterRow}>
+                    <label className={styles.filterLabel}>Filter by</label>
+                    <select
+                      className={styles.filterSelect}
+                      value={filterType}
+                      onChange={(e) => updateDraft({ type: e.target.value })}
+                    >
+                      <option value="date">Date range</option>
+                      <option value="month">Month</option>
+                      <option value="quarter">Quarter</option>
+                      <option value="year">Year</option>
+                    </select>
+                  </div>
+                  {filterType === 'date' ? (
+                    <>
+                      <div className={styles.filterRow}>
+                        <label className={styles.filterLabel}>From</label>
+                        <input
+                          type="date"
+                          className={styles.filterInput}
+                          value={filterFrom}
+                          onChange={(e) => updateDraft({ from: e.target.value })}
+                        />
+                      </div>
+                      <div className={styles.filterRow}>
+                        <label className={styles.filterLabel}>To</label>
+                        <input
+                          type="date"
+                          className={styles.filterInput}
+                          value={filterTo}
+                          onChange={(e) => updateDraft({ to: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className={styles.filterRow}>
+                      <label className={styles.filterLabel}>
+                        {filterType === 'month' ? 'Month (YYYY-MM)' : filterType === 'quarter' ? 'Quarter (e.g. 2024-Q1)' : 'Year (YYYY)'}
+                      </label>
+                      <input
+                        type="text"
+                        className={styles.filterInput}
+                        placeholder={filterType === 'year' ? '2024' : filterType === 'month' ? '2024-01' : '2024-Q1'}
+                        value={filterValue}
+                        onChange={(e) => updateDraft({ value: e.target.value })}
+                      />
+                    </div>
+                  )}
+                  <div className={styles.filterActions}>
+                    <button type="button" className={styles.filterApplyBtn} onClick={applyFilter}>Apply</button>
+                    <button type="button" className={styles.filterClearBtn} onClick={clearFilter}>Clear filter</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         <div className={styles.toolbarGroup}>
           <ToolbarButton icon={AiOutlinePrinter} label="Print" onClick={onPrint} />
@@ -223,7 +441,40 @@ const DashboardToolbar = ({
 
         <div className={styles.toolbarGroup}>
           <ToolbarButton icon={AiOutlineSave} label="Save" onClick={onSave} variant="primary" />
-          <ToolbarButton icon={AiOutlineFolderOpen} label="Load" onClick={onLoad} />
+          {onLoadDashboardById && savedDashboards && savedDashboards.length > 0 ? (
+            <div className={styles.loadDropdownWrap} ref={loadDropdownRef}>
+              <button
+                type="button"
+                className={styles.toolbarBtn}
+                onClick={() => setLoadDropdownOpen(!loadDropdownOpen)}
+                title="Load a saved dashboard"
+              >
+                <AiOutlineFolderOpen className={styles.toolbarIcon} aria-hidden />
+                <span className={styles.toolbarLabel}>Load</span>
+                <AiOutlineDown className={`${styles.toolbarChevron} ${loadDropdownOpen ? styles.open : ''}`} aria-hidden />
+              </button>
+              {loadDropdownOpen && (
+                <div className={`${styles.dropdownMenu} ${styles.loadDropdownMenu}`} role="menu">
+                  {savedDashboards.map((d) => (
+                    <button
+                      key={d._id || d.id}
+                      type="button"
+                      className={styles.dropdownItem}
+                      onClick={() => {
+                        onLoadDashboardById(d._id || d.id);
+                        setLoadDropdownOpen(false);
+                      }}
+                      role="menuitem"
+                    >
+                      {d.name || 'Unnamed'} {d.updatedAt && `(${new Date(d.updatedAt).toLocaleDateString()})`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <ToolbarButton icon={AiOutlineFolderOpen} label="Load" onClick={onLoad} title="Load latest from server or local" />
+          )}
         </div>
 
         {onShare && (
@@ -274,6 +525,23 @@ DashboardToolbar.propTypes = {
   saveStatus: PropTypes.string,
   fileInputRef: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
   recordCount: PropTypes.number,
+  onViewData: PropTypes.func,
+  dashboardName: PropTypes.string,
+  onDashboardNameChange: PropTypes.func,
+  savedDashboards: PropTypes.array,
+  onLoadDashboardById: PropTypes.func,
+  dashboardLogo: PropTypes.string,
+  onSetLogo: PropTypes.func,
+  onClearLogo: PropTypes.func,
+  dataFilter: PropTypes.shape({
+    field: PropTypes.string,
+    type: PropTypes.oneOf(['date', 'month', 'quarter', 'year']),
+    from: PropTypes.string,
+    to: PropTypes.string,
+    value: PropTypes.string,
+  }),
+  onDataFilterChange: PropTypes.func,
+  dateFields: PropTypes.arrayOf(PropTypes.shape({ name: PropTypes.string, type: PropTypes.string })),
 };
 
 export default DashboardToolbar;

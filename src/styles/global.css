@@ -397,6 +397,26 @@ body {
   align-items: center;
   position: relative;
 }
+.bi-chart-title-text {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.bi-chart-title-text:hover {
+  border-bottom-color: var(--color-blue);
+}
+.bi-chart-title-input {
+  flex: 1;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  padding: 4px 8px;
+  border: 1px solid var(--color-blue);
+  border-radius: 4px;
+  outline: none;
+}
 .bi-chart-menu {
   position: relative;
 }

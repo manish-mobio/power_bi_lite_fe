@@ -83,6 +83,30 @@
     font-weight: 500;
     margin-left: 6px;
   }
+
+  .dashboardNameWrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dashboardNameInput {
+    padding: 6px 12px;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    min-width: 140px;
+    max-width: 200px;
+  }
+
+  .dashboardNameInput:focus {
+    outline: none;
+    border-color: var(--color-blue, #2563eb);
+  }
+
+  .loadDropdownWrap {
+    position: relative;
+  }
   
   .toolbarRight {
     display: flex;
@@ -193,6 +217,12 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
     z-index: 1000;
   }
+
+  .loadDropdownMenu {
+    max-height: 280px;
+    overflow-y: auto;
+    min-width: 220px;
+  }
   
   .dropdownItem {
     display: block;
@@ -246,4 +276,94 @@
     border: 1px solid var(--color-border, #e5e7eb);
     border-radius: 6px;
     background: #f9fafb;
+  }
+
+  .filterBadge {
+    color: var(--color-blue, #2563eb);
+    font-size: 8px;
+    margin-left: 2px;
+  }
+
+  .filterDropdownMenu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 260px;
+    padding: 12px;
+    background: var(--color-white, #fff);
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    z-index: 1000;
+  }
+
+  .filterRow {
+    margin-bottom: 10px;
+  }
+
+  .filterRow:last-of-type {
+    margin-bottom: 12px;
+  }
+
+  .filterLabel {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--color-gray-dark, #6b7280);
+    margin-bottom: 4px;
+  }
+
+  .filterSelect,
+  .filterInput {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 0.875rem;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 6px;
+    box-sizing: border-box;
+  }
+
+  .filterInput:focus,
+  .filterSelect:focus {
+    outline: none;
+    border-color: var(--color-blue, #2563eb);
+  }
+
+  .filterActions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border, #e5e7eb);
+  }
+
+  .filterApplyBtn {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    background: var(--color-blue, #2563eb);
+    color: #fff;
+    cursor: pointer;
+  }
+
+  .filterApplyBtn:hover {
+    background: #1d4ed8;
+  }
+
+  .filterClearBtn {
+    padding: 6px 14px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--color-gray-darker, #374151);
+    cursor: pointer;
+  }
+
+  .filterClearBtn:hover {
+    background: #f3f4f6;
   }

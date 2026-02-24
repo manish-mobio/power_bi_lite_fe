@@ -6,12 +6,15 @@ import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import PropTypes from 'prop-types';
 import ReactECharts from 'echarts-for-react';
 
-const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate }) => {
+const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, globalFilter }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
   const menuRef = useRef(null);
+  const titleInputRef = useRef(null);
 
   const fetchData = useCallback(() => {
     if (!config) return;
@@ -20,10 +23,11 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
     setLoading(true);
     setError(null);
 
+    const body = { ...config, filter: globalFilter || undefined };
     fetch('/api/bi/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
+      body: JSON.stringify(body),
     })
       .then((res) => res.json())
       .then((result) => {
@@ -48,11 +52,11 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       });
 
     return () => { cancelled = true; };
-  }, [config]);
+  }, [config, globalFilter]);
 
   useEffect(() => {
     fetchData();
-  }, [config?.id, config?.collection, config?.dimension, config?.measure?.field, config?.measure?.op, config?.limit, config?.type, config?.selectedFields, config?.sortBy, config?.sortOrder, fetchData]);
+  }, [config?.id, config?.collection, config?.dimension, config?.measure?.field, config?.measure?.op, config?.limit, config?.type, config?.selectedFields, config?.sortBy, config?.sortOrder, globalFilter, fetchData]);
 
   // Auto-refresh every 30s so chart reflects current DB data
   useEffect(() => {
@@ -77,7 +81,27 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
 
   // Table type: data is array of row objects
   const isTable = config.type === 'table';
+  const isCard = config.type === 'card';
   const tableData = isTable && Array.isArray(data) ? data : [];
+
+  const displayTitle = config.title != null && String(config.title).trim() !== ''
+    ? String(config.title).trim()
+    : config.type === 'table'
+      ? (config.selectedFields?.length ? `Table (${config.selectedFields.length} columns)` : 'Table')
+      : `${config.dimension || ''} by ${config.measure?.op || 'COUNT'}(${config.measure?.field || ''})`;
+
+  const startEditTitle = () => {
+    setTitleInput(displayTitle);
+    setEditingTitle(true);
+    setShowMenu(false);
+    setTimeout(() => titleInputRef.current?.focus(), 0);
+  };
+
+  const saveTitle = () => {
+    const v = titleInput.trim();
+    if (onUpdate) onUpdate({ title: v || undefined });
+    setEditingTitle(false);
+  };
 
   const handleTableSort = useCallback(
     (columnKey) => {
@@ -89,7 +113,7 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
   );
 
   const option = useMemo(() => {
-    if (isTable) return null;
+    if (isTable || isCard) return null;
     if (!data || data.length === 0) return null;
 
     const names = data.map((d) => d.name);
@@ -273,11 +297,35 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       tabIndex={0}
     >
       <div className="bi-chart-title">
-        <span>
-          {config.type === 'table'
-            ? (config.selectedFields?.length ? `Table (${config.selectedFields.length} columns)` : 'Table')
-            : `${config.dimension} by ${config.measure?.op}(${config.measure?.field || ''})`}
-        </span>
+        {editingTitle ? (
+          <input
+            ref={titleInputRef}
+            type="text"
+            className="bi-chart-title-input"
+            value={titleInput}
+            onChange={(e) => setTitleInput(e.target.value)}
+            onBlur={saveTitle}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveTitle();
+              if (e.key === 'Escape') {
+                setTitleInput(displayTitle);
+                setEditingTitle(false);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className="bi-chart-title-text"
+            onClick={(e) => { e.stopPropagation(); if (onUpdate) startEditTitle(); }}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && onUpdate && startEditTitle()}
+            title="Click to rename"
+          >
+            {displayTitle}
+          </span>
+        )}
         <div className="bi-chart-menu" ref={menuRef}>
           <button
             type="button"
@@ -293,6 +341,9 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
           </button>
           {showMenu && (
             <div className="bi-chart-menu-dropdown">
+              <button type="button" onClick={() => { startEditTitle(); }} className="bi-chart-menu-item">
+                <span>✏️</span> Rename
+              </button>
               <button type="button" onClick={handleRefreshClick} className="bi-chart-menu-item">
                 <span>🔄</span> Refresh
               </button>
@@ -315,6 +366,24 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
         {error && <div className="bi-chart-error">{error}</div>}
         {!loading && !error && data?.length === 0 && (
           <div className="bi-chart-empty">No data available</div>
+        )}
+        {!loading && !error && isCard && data?.length > 0 && (
+          <div className="bi-chart-card-content" style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            height: '100%', padding: '20px', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '48px', fontWeight: 'bold', color: '#2563eb', marginBottom: '8px' }}>
+              {data[0]?.value != null
+                ? (typeof data[0].value === 'number' ? data[0].value.toLocaleString() : String(data[0].value))
+                : '—'}
+            </div>
+            <div style={{ fontSize: '14px', color: '#6b7280', fontWeight: 500 }}>
+              {config.measure?.op || 'COUNT'}({config.measure?.field || config.dimension || ''})
+            </div>
+            {data[0]?.name && (
+              <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '4px' }}>{data[0].name}</div>
+            )}
+          </div>
         )}
         {!loading && !error && isTable && tableData.length > 0 && (
           <div className="bi-chart-table-wrap">
@@ -354,7 +423,7 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
             </table>
           </div>
         )}
-        {!loading && !error && !isTable && data?.length > 0 && option && (
+        {!loading && !error && !isTable && !isCard && data?.length > 0 && option && (
           <ReactECharts option={option} style={{ height: '100%', minHeight: 200 }} opts={{ renderer: 'canvas' }} />
         )}
       </div>
@@ -365,7 +434,7 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
 SmartChart.propTypes = {
   config: PropTypes.shape({
     id: PropTypes.string,
-    type: PropTypes.oneOf(['bar', 'line', 'pie', 'area', 'stackedBar', 'donut', 'scatter', 'table']),
+    type: PropTypes.oneOf(['bar', 'line', 'pie', 'area', 'stackedBar', 'donut', 'scatter', 'table', 'card']),
     collection: PropTypes.string,
     dimension: PropTypes.string,
     measure: PropTypes.shape({
@@ -373,6 +442,7 @@ SmartChart.propTypes = {
       op: PropTypes.string,
     }),
     limit: PropTypes.number,
+    title: PropTypes.string,
     selectedFields: PropTypes.array,
     sortBy: PropTypes.string,
     sortOrder: PropTypes.string,

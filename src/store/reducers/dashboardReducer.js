@@ -118,6 +118,7 @@ function createDefaultChartConfig() {
     dimension: 'gender',
     measure: { field: 'id', op: 'COUNT' },
     limit: 10,
+    title: undefined, // optional display name; when set, shown as chart header
   };
 }
 

@@ -16,10 +16,11 @@ const CHART_TYPE_LABELS = {
   stackedBar: 'Stacked Bar',
   donut: 'Donut',
   scatter: 'Scatter',
+  card: 'Card',
   table: 'Table',
 };
 
-const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSizeChange }) => {
+const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove, onLayoutSizeChange }) => {
   if (!config) {
     return (
       <div className="bi-config-panel">
@@ -35,6 +36,9 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
   const stringFields = allFields.filter((f) => f.type === 'string');
   const numberFields = allFields.filter((f) => f.type === 'number');
   const isTable = config.type === 'table';
+  const isPieOrDonut = config.type === 'pie' || config.type === 'donut';
+  const isCard = config.type === 'card';
+  const hasAxis = ['bar', 'line', 'area', 'stackedBar', 'scatter'].includes(config.type);
   const selectedFields = config.selectedFields || [];
 
   const handleChange = (key, value) => {
@@ -45,16 +49,20 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
     } else if (key === 'measureOp') {
       onUpdate({ measure: { ...config.measure, op: value } });
     } else if (key === 'type') {
-      // When switching to table, set default limit to 100 if not already set or if current limit is too small
+      // When switching chart type, keep existing limit; only default table to a reasonable min if very small
       const updates = { type: value };
+      const maxLimit = typeof recordCount === 'number' && recordCount > 0 ? recordCount : (value === 'table' ? 10000 : 1000);
       if (value === 'table' && (!config.limit || config.limit < 50)) {
-        updates.limit = 100;
-      } else if (value !== 'table' && (!config.limit || config.limit > 1000)) {
-        updates.limit = 10;
+        updates.limit = Math.min(maxLimit, 100);
       }
+      // Do not reset limit to 10 when switching to non-table — keep current limit or user will use max
       onUpdate(updates);
     } else if (key === 'limit') {
-      onUpdate({ limit: Math.max(1, parseInt(value, 10) || 10) });
+      const num = parseInt(value, 10);
+      const maxLimit = typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10000;
+      onUpdate({ limit: Math.min(maxLimit, Math.max(1, num || 1)) });
+    } else if (key === 'title') {
+      onUpdate({ title: value === '' ? undefined : value });
     } else if (key === 'sortBy') {
       onUpdate({ sortBy: value });
     } else if (key === 'sortOrder') {
@@ -94,6 +102,7 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
   };
 
   const sortable = isTable || ['bar', 'line', 'area', 'stackedBar'].includes(config.type);
+  const showLimit = true;
 
   const layoutItem = layouts?.lg?.find((item) => item.i === config.id);
   const layoutW = layoutItem?.w ?? 6;
@@ -105,6 +114,17 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
         <h3>Chart Config</h3>
       </div>
       <div className="bi-config-body">
+        <div className="bi-config-row">
+          <label>Chart name</label>
+          <input
+            type="text"
+            className="bi-config-input"
+            placeholder="Optional display name"
+            value={config.title ?? ''}
+            onChange={(e) => handleChange('title', e.target.value)}
+          />
+        </div>
+
         <div className="bi-config-row">
           <label>Chart Type</label>
           <Select
@@ -133,7 +153,8 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
           </select> */}
         </div>
 
-        {!isTable && (
+        {/* Axis charts: X-axis, Y-axis, Legend (Power BI style) */}
+        {hasAxis && (
           <>
             <div className="bi-config-row">
               <label>X-axis</label>
@@ -182,6 +203,107 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
           </>
         )}
 
+        {/* Pie / Donut: Legend + Values only (no X/Y) */}
+        {isPieOrDonut && (
+          <>
+            <div className="bi-config-row">
+              <label>Legend</label>
+              <select
+                value={config.dimension}
+                onChange={(e) => handleChange('dimension', e.target.value)}
+              >
+                {stringFields.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bi-config-row">
+              <label>Values</label>
+              <select
+                value={config.measure?.op}
+                onChange={(e) => handleChange('measureOp', e.target.value)}
+              >
+                {AGG_OPS.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bi-config-row">
+              <label>Values field</label>
+              <select
+                value={config.measure?.field}
+                onChange={(e) => handleChange('measureField', e.target.value)}
+              >
+                {numberFields.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name}
+                  </option>
+                ))}
+                {stringFields.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name} (COUNT)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        {/* Card: single Value only */}
+        {isCard && (
+          <>
+            <div className="bi-config-row">
+              <label>Value</label>
+              <select
+                value={config.measure?.op}
+                onChange={(e) => handleChange('measureOp', e.target.value)}
+              >
+                {AGG_OPS.map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bi-config-row">
+              <label>Value field</label>
+              <select
+                value={config.measure?.field}
+                onChange={(e) => handleChange('measureField', e.target.value)}
+              >
+                {numberFields.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name}
+                  </option>
+                ))}
+                {stringFields.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name} (COUNT)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="bi-config-row">
+              <label>Category (optional)</label>
+              <select
+                value={config.dimension}
+                onChange={(e) => handleChange('dimension', e.target.value)}
+              >
+                <option value="">— None —</option>
+                {stringFields.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </>
+        )}
+
         {isTable && (
           <div className="bi-config-row">
             <label>Columns to show</label>
@@ -212,16 +334,18 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
           </div>
         )}
 
-        <div className="bi-config-row">
-          <label>Limit {isTable ? '(rows)' : '(results)'}</label>
-          <input
-            type="number"
-            min={1}
-            max={isTable ? 10000 : 1000}
-            value={config.limit || (isTable ? 100 : 10)}
-            onChange={(e) => handleChange('limit', e.target.value)}
-          />
-        </div>
+        {showLimit && (
+          <div className="bi-config-row">
+            <label>Limit {isTable ? '(rows)' : '(results)'}</label>
+            <input
+              type="number"
+              min={1}
+              max={typeof recordCount === 'number' && recordCount > 0 ? recordCount : (isTable ? 10000 : 1000)}
+              value={config.limit ?? (typeof recordCount === 'number' && recordCount > 0 ? recordCount : (isTable ? 100 : 10))}
+              onChange={(e) => handleChange('limit', e.target.value)}
+            />
+          </div>
+        )}
 
         {sortable && (
           <>
@@ -291,6 +415,7 @@ ConfigPanel.propTypes = {
   config: PropTypes.object,
   fields: PropTypes.array,
   layouts: PropTypes.object,
+  recordCount: PropTypes.number,
   onUpdate: PropTypes.func,
   onRemove: PropTypes.func,
   onLayoutSizeChange: PropTypes.func,

@@ -85,6 +85,12 @@ const getBackendUrl = () =>
           type = 'string'; // Arrays treated as string for now
         } else if (typeof value === 'object') {
           type = 'string'; // Objects treated as string for now
+        } else if (typeof value === 'string') {
+          const trimmed = value.trim();
+          if (trimmed && !Number.isNaN(Date.parse(trimmed))) type = 'date';
+        }
+        if (type === 'string' && /date|time|created|updated|at$/i.test(key)) {
+          type = 'date';
         }
 
         schema.push({ name: key, type });

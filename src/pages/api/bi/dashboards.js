@@ -24,12 +24,13 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const body = req.body || {};
-      const { name = 'My Dashboard', charts = [], layouts = {} } = body;
+      const { name = 'My Dashboard', charts = [], layouts = {}, logo } = body;
 
       const payload = {
         name,
         charts,
         layouts,
+        ...(logo != null && typeof logo === 'string' ? { logo } : {}),
         updatedAt: new Date().toISOString(),
       };
 

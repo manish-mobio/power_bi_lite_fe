@@ -33,7 +33,7 @@ import {
 } from '@ant-design/icons';
 
 export const AGG_OPS = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
-export const CHART_TYPES = ['bar', 'line', 'pie', 'area', 'stackedBar', 'donut', 'scatter', 'table'];
+export const CHART_TYPES = ['bar', 'line', 'pie', 'area', 'stackedBar', 'donut', 'scatter', 'card', 'table'];
 export const SORT_ORDERS = ['asc', 'desc'];
 export const SORT_BY_OPTIONS = ['dimension', 'measure'];
 
@@ -45,6 +45,7 @@ export const CHART_TYPE_ICONS = {
     area: <AreaChartOutlined />,
     stackedBar: <BarChartOutlined />,
     scatter: <DotChartOutlined />,
+    card: <BarChartOutlined />,
     table: <TableOutlined />,
 };
 

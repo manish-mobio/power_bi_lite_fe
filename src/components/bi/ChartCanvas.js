@@ -49,7 +49,7 @@ function getHandleStyle(dir) {
 const DEFAULT_CANVAS_MIN = { width: 2400, height: 1600 };
 
 /** Single draggable + resizable chart item; positions relative to playground content */
-const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, contentBounds, isExportMode }) => {
+const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, contentBounds, isExportMode, globalFilter }) => {
   const [rect, setRect] = useState(initialRect || { x: 40, y: 40, w: 480, h: 300 });
   const rectRef = useRef(rect);
   const containerRef = useRef(null);
@@ -167,7 +167,6 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
         style={{ width: '100%', height: '100%', cursor: 'default' }}
       >
         <SmartChart
-          // isExportMode={isExportMode}
           config={config}
           isSelected={isSelected}
           onSelect={onSelect}
@@ -175,6 +174,7 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
           onRemove={onRemove}
           onDuplicate={onDuplicate}
           onUpdate={onUpdate}
+          globalFilter={globalFilter}
         />
       </div>
 
@@ -210,7 +210,6 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
 
 const ChartCanvas = ({
   charts,
-  // isExportMode,
   selectedChartId,
   onSelect,
   onLayoutChange,
@@ -219,6 +218,7 @@ const ChartCanvas = ({
   onRemove,
   onDuplicate,
   onChartUpdate,
+  globalFilter,
 }) => {
   const scrollContainerRef = useRef(null);
   const contentRef = useRef(null);
@@ -421,6 +421,7 @@ const ChartCanvas = ({
               initialRect={getInitialRect(config, idx)}
               onRectChange={handleRectChange}
               contentBounds={contentBounds}
+              globalFilter={globalFilter}
             />
           ))}
         </div>
@@ -512,6 +513,13 @@ ChartCanvas.propTypes = {
   onRemove: PropTypes.func,
   onDuplicate: PropTypes.func,
   onChartUpdate: PropTypes.func,
+  globalFilter: PropTypes.shape({
+    field: PropTypes.string,
+    type: PropTypes.string,
+    from: PropTypes.string,
+    to: PropTypes.string,
+    value: PropTypes.string,
+  }),
 };
 
 export default ChartCanvas;

@@ -18,6 +18,7 @@ import {
 import FieldList from './FieldList';
 import ChartCanvas from './ChartCanvas';
 import ConfigPanel from './ConfigPanel';
+import ViewDataModal from './ViewDataModal';
 // import Copilot from './Copilot';
 const { jsPDF } = await import('jspdf');
 const { html2canvas } = await import('html2canvas');
@@ -25,6 +26,47 @@ import styles from './BiDashboard.module.css';
 import DashboardToolbar from './DashboardToolbar';
 
 const STORAGE_KEY = 'powerbi-dashboard';
+
+function buildLayoutsAndChartsFromSaved(dashboard) {
+  const cfg = dashboard?.charts ?? [];
+  if (!Array.isArray(cfg) || cfg.length === 0) {
+    return { chartsWithIds: [], validLayouts: {}, collection: '' };
+  }
+  const chartIds = cfg.map((c) => c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+  const validLayouts = {};
+  if (dashboard?.layouts?.lg && Array.isArray(dashboard.layouts.lg)) {
+    const savedLg = dashboard.layouts.lg;
+    const hasValidSaved = savedLg.length === chartIds.length && chartIds.every((id) => savedLg.some((item) => item.i === id));
+    if (hasValidSaved) {
+      validLayouts.lg = savedLg;
+      validLayouts.md = dashboard.layouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
+      validLayouts.sm = dashboard.layouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
+    } else {
+      const items = chartIds.map((id, idx) => ({ i: id, x: (idx % 2) * 6, y: Math.floor(idx / 2) * 2, w: 6, h: 2 }));
+      validLayouts.lg = items;
+      validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
+      validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
+    }
+  } else {
+    const items = chartIds.map((id, idx) => ({ i: id, x: (idx % 2) * 6, y: Math.floor(idx / 2) * 2, w: 6, h: 2 }));
+    validLayouts.lg = items;
+    validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
+    validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
+  }
+  const chartsWithIds = cfg.map((c, idx) => ({ ...c, id: c.id || chartIds[idx] }));
+  const collection = (chartsWithIds[0] && chartsWithIds[0].collection) || dashboard?.collection || '';
+  return { chartsWithIds, validLayouts, collection };
+}
+
+/** Strip sort indicator from table header text so PDF shows only column name (e.g. "State Code ▲" → "State Code") */
+function cleanPdfHeaderLabel(str) {
+  if (str == null || typeof str !== 'string') return '';
+  return str
+    .trim()
+    .replace(/\s*[▲▼↑↓↗↘%²]\s*$/g, '')
+    .replace(/\s+[^\w\s]+$/g, '')
+    .trim() || str.trim();
+}
 
 const BiDashboard = () => {
   const dispatch = useDispatch();
@@ -37,12 +79,29 @@ const BiDashboard = () => {
   const [chartToDeleteId, setChartToDeleteId] = useState(null);
   const [exportPdfInProgress, setExportPdfInProgress] = useState(false);
   const [isExportMode, setIsExportMode] = useState(false);
+  const [viewDataOpen, setViewDataOpen] = useState(false);
+  const [dashboardName, setDashboardName] = useState('');
+  const [savedDashboards, setSavedDashboards] = useState([]);
+  const [dashboardLogo, setDashboardLogo] = useState(null); // base64 data URL for dashboard logo
+  const [dataFilter, setDataFilter] = useState(null); // { field, type: 'date'|'month'|'quarter'|'year', from?, to?, value? }
 
   // const [copilotOpen, setCopilotOpen] = useState(false);
   const debounceTimerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const logoInputRef = useRef(null);
 
   const selectedChart = charts.find((c) => c.id === selectedChartId);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/bi/dashboards')
+      .then((res) => res.json())
+      .then((list) => {
+        if (!cancelled) setSavedDashboards(Array.isArray(list) ? list : []);
+      })
+      .catch(() => { if (!cancelled) setSavedDashboards([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Sync collectionInput with collection from store
   useEffect(() => {
@@ -146,6 +205,12 @@ const BiDashboard = () => {
           }));
 
           dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts }));
+          if (parsedData.logo != null && typeof parsedData.logo === 'string') {
+            setDashboardLogo(parsedData.logo);
+          } else {
+            setDashboardLogo(null);
+          }
+          if (parsedData.name) setDashboardName(parsedData.name);
           setSaveStatus('Dashboard loaded successfully');
           setTimeout(() => setSaveStatus(''), 2000);
 
@@ -231,11 +296,11 @@ const BiDashboard = () => {
           dimension,
           measure: { field: measureField, op: measureOp || 'COUNT' },
           type: 'bar',
-          limit: 10,
+          limit: typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10,
         })
       );
     },
-    [dispatch, collection]
+    [dispatch, collection, recordCount]
   );
 
   const handleUpdateChart = useCallback(
@@ -355,14 +420,16 @@ const BiDashboard = () => {
   const handleSaveDashboard = useCallback(async () => {
     setSaveStatus('Saving...');
     setShareUrl('');
+    const name = (dashboardName && dashboardName.trim()) || 'My Dashboard';
     try {
       const res = await fetch('/api/bi/dashboards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: 'My Dashboard',
+          name,
           charts,
           layouts,
+          logo: dashboardLogo || undefined,
         }),
       });
       if (res.ok) {
@@ -370,28 +437,30 @@ const BiDashboard = () => {
           const json = await res.json();
           const id = json?.id || json?._id;
           if (id) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
+            if (json.name) setDashboardName(json.name);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection, dashboardName: name, logo: dashboardLogo || undefined }));
             setSaveStatus('Saved');
             const base = typeof window !== 'undefined' ? window.location.origin : '';
             setShareUrl(`${base}/dashboard/${id}`);
+            fetch('/api/bi/dashboards').then((r) => r.json()).then((list) => setSavedDashboards(Array.isArray(list) ? list : []));
           } else {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection, logo: dashboardLogo || undefined }));
             setSaveStatus('Saved (local)');
           }
         } catch {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection, logo: dashboardLogo || undefined }));
           setSaveStatus('Saved (local)');
         }
       } else {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection, logo: dashboardLogo || undefined }));
         setSaveStatus('Saved (local)');
       }
     } catch {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ charts, layouts, collection, logo: dashboardLogo || undefined }));
       setSaveStatus('Saved (local)');
     }
     setTimeout(() => setSaveStatus(''), 2000);
-  }, [charts, layouts, collection]);
+  }, [charts, layouts, collection, dashboardName, dashboardLogo]);
 
   const handleShare = useCallback(() => {
     if (shareUrl && navigator.clipboard?.writeText) {
@@ -457,6 +526,9 @@ const BiDashboard = () => {
           const loadedCollection = savedCollection || (savedCharts[0] && savedCharts[0].collection) || collection;
           dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts, collection: loadedCollection }));
           setCollectionInput(loadedCollection);
+          if (parsed.dashboardName != null) setDashboardName(parsed.dashboardName);
+          if (parsed.logo != null && typeof parsed.logo === 'string') setDashboardLogo(parsed.logo);
+          else setDashboardLogo(null);
           setSaveStatus('Loaded');
           setTimeout(() => setSaveStatus(''), 2000);
         }
@@ -534,106 +606,141 @@ const BiDashboard = () => {
     }
   }, [dispatch]);
 
+  const handleLoadDashboardById = useCallback((id) => {
+    if (!id) return;
+    setSaveStatus('Loading...');
+    fetch(`/api/bi/dashboards/${id}`)
+      .then((res) => {
+        if (res.status === 404) {
+          setSaveStatus('Dashboard not found');
+          setTimeout(() => setSaveStatus(''), 2000);
+          return null;
+        }
+        if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        if (data == null) return;
+        const { chartsWithIds, validLayouts, collection: loadedCollection } = buildLayoutsAndChartsFromSaved(data);
+        if (chartsWithIds.length === 0) {
+          setSaveStatus('No charts in this dashboard');
+          setTimeout(() => setSaveStatus(''), 2000);
+          return;
+        }
+        dispatch(loadDashboard({ charts: chartsWithIds, layouts: validLayouts, collection: loadedCollection }));
+        setCollectionInput(loadedCollection);
+        if (data.name) setDashboardName(data.name);
+        if (data.logo != null && typeof data.logo === 'string') setDashboardLogo(data.logo);
+        else setDashboardLogo(null);
+        setSaveStatus('Loaded');
+        setTimeout(() => setSaveStatus(''), 2000);
+      })
+      .catch((err) => {
+        setSaveStatus(err.message || 'Load failed');
+        setTimeout(() => setSaveStatus(''), 2000);
+      });
+  }, [dispatch]);
 
-  // const handlePrintDashboard = useCallback(async () => {
-  //   setSaveStatus('Preparing print...');
-  //   try {
-  //     const html2canvas = (await import('html2canvas')).default;
-  //     // Capture only the charts area (exclude zoom controls)
-  //     const printArea = document.querySelector('.bi-playground-content');
-  //     if (!printArea) {
-  //       setSaveStatus('Canvas not found');
-  //       setTimeout(() => setSaveStatus(''), 2000);
-  //       return;
-  //     }
 
-  //     const canvasElement = await html2canvas(printArea, {
-  //       backgroundColor: '#ffffff',
-  //       scale: 2,
-  //     });
+  const handlePrintDashboard = useCallback(async () => {
+    setSaveStatus('Preparing print...');
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      // Capture only the charts area (exclude zoom controls)
+      const printArea = document.querySelector('.bi-playground-content');
+      if (!printArea) {
+        setSaveStatus('Canvas not found');
+        setTimeout(() => setSaveStatus(''), 2000);
+        return;
+      }
 
-  //     const imgData = canvasElement.toDataURL('image/png');
+      const canvasElement = await html2canvas(printArea, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+      });
 
-  //     // Open a minimal print window with only the canvas image
-  //     const printWindow = window.open('', '_blank', 'width=1200,height=800');
-  //     if (!printWindow) {
-  //       setSaveStatus('Popup blocked — allow popups and try again');
-  //       setTimeout(() => setSaveStatus(''), 3000);
-  //       return;
-  //     }
+      const imgData = canvasElement.toDataURL('image/png');
 
-  //     printWindow.document.write(`
-  //       <!DOCTYPE html>
-  //       <html>
-  //         <head>
-  //           <title>Dashboard Print</title>
-  //           <style>
-  //             * {
-  //               margin: 0;
-  //               padding: 0;
-  //               box-sizing: border-box;
-  //             }
-  //             body {
-  //               background: #ffffff;
-  //               display: flex;
-  //               align-items: flex-start;
-  //               justify-content: center;
-  //             }
-  //             .print-container {
-  //               width: 100%;
-  //             }
-  //             img {
-  //               width: 100%;
-  //               height: auto;
-  //               display: block;
-  //             }
-  //             @media print {
-  //               * {
-  //                 margin: 0 !important;
-  //                 padding: 0 !important;
-  //               }
-  //               body {
-  //                 background: #ffffff !important;
-  //               }
-  //               img {
-  //                 width: 100% !important;
-  //                 height: auto !important;
-  //                 page-break-inside: avoid;
-  //               }
-  //               @page {
-  //                 size: landscape;
-  //                 margin: 8mm;
-  //               }
-  //             }
-  //           </style>
-  //         </head>
-  //         <body>
-  //           <div class="print-container">
-  //             <img src="${imgData}" alt="Dashboard" />
-  //           </div>
-  //           <script>
-  //             // Auto-trigger print once image is loaded
-  //             const img = document.querySelector('img');
-  //             img.onload = () => {
-  //               setTimeout(() => {
-  //                 window.print();
-  //                 window.close();
-  //               }, 300);
-  //             };
-  //           </script>
-  //         </body>
-  //       </html>
-  //     `);
+      // Open a minimal print window with only the canvas image
+      const printWindow = window.open('', '_blank', 'width=1200,height=800');
+      if (!printWindow) {
+        setSaveStatus('Popup blocked — allow popups and try again');
+        setTimeout(() => setSaveStatus(''), 3000);
+        return;
+      }
 
-  //     printWindow.document.close();
-  //     setSaveStatus('Print dialog opened');
-  //     setTimeout(() => setSaveStatus(''), 2000);
-  //   } catch (error) {
-  //     console.error('Print failed', error);
-  //     setSaveStatus('Print failed');
-  //     setTimeout(() => setSaveStatus(''), 3000);
-  //   }
-  // }, []);
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Dashboard Print</title>
+            <style>
+              * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+              }
+              body {
+                background: #ffffff;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+              }
+              .print-container {
+                width: 100%;
+              }
+              img {
+                width: 100%;
+                height: auto;
+                display: block;
+              }
+              @media print {
+                * {
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                body {
+                  background: #ffffff !important;
+                }
+                img {
+                  width: 100% !important;
+                  height: auto !important;
+                  page-break-inside: avoid;
+                }
+                @page {
+                  size: landscape;
+                  margin: 8mm;
+                }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="print-container">
+              <img src="${imgData}" alt="Dashboard" />
+            </div>
+            <script>
+              // Auto-trigger print once image is loaded
+              const img = document.querySelector('img');
+              img.onload = () => {
+                setTimeout(() => {
+                  window.print();
+                  window.close();
+                }, 300);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+      setSaveStatus('Print dialog opened');
+      setTimeout(() => setSaveStatus(''), 2000);
+    } catch (error) {
+      console.error('Print failed', error);
+      setSaveStatus('Print failed');
+      setTimeout(() => setSaveStatus(''), 3000);
+    }
+  }, []);
 
 
   // Download JSON config
@@ -1212,458 +1319,461 @@ const BiDashboard = () => {
   //     setTimeout(() => setSaveStatus(''), 3000);
   //   }
   // }, []);
-  const handlePrintDashboard = useCallback(async () => {
-    setSaveStatus('Preparing print...');
+  // const handlePrintDashboard = useCallback(async () => {
+  //   setSaveStatus('Preparing print...');
     
-    try {
-      const html2canvas = (await import('html2canvas')).default;
-      const autoTable = (await import('jspdf-autotable')).default;
+  //   try {
+  //     const html2canvas = (await import('html2canvas')).default;
+  //     const autoTable = (await import('jspdf-autotable')).default;
       
-      // We'll use jsPDF to generate a print-optimized document
-      const { jsPDF } = await import('jspdf');
+  //     // We'll use jsPDF to generate a print-optimized document
+  //     const { jsPDF } = await import('jspdf');
       
-      const target = document.querySelector('.bi-playground-content');
-      if (!target) throw new Error('Print area not found');
+  //     const target = document.querySelector('.bi-playground-content');
+  //     if (!target) throw new Error('Print area not found');
   
-      // ── Detect content types ───────────────────────────────────────────────
-      const hasCanvas = target.querySelector('canvas') !== null;
-      const hasTable = target.querySelector('table') !== null;
-      const isOnlyTable = hasTable && !hasCanvas;
+  //     // ── Detect content types ───────────────────────────────────────────────
+  //     const hasCanvas = target.querySelector('canvas') !== null;
+  //     const hasTable = target.querySelector('table') !== null;
+  //     const isOnlyTable = hasTable && !hasCanvas;
   
-      // ══════════════════════════════════════════════════════════════════════
-      // MODE 1 — PURE TABLE ONLY → jspdf-autotable (perfect text quality)
-      // ══════════════════════════════════════════════════════════════════════
-      if (isOnlyTable) {
-        const tableEl = target.querySelector('table');
+  //     // ══════════════════════════════════════════════════════════════════════
+  //     // MODE 1 — PURE TABLE ONLY → jspdf-autotable (perfect text quality)
+  //     // ══════════════════════════════════════════════════════════════════════
+  //     if (isOnlyTable) {
+  //       const tableEl = target.querySelector('table');
   
-        const theadCells = Array.from(
-          tableEl.querySelectorAll('thead tr:first-child th, thead tr:first-child td')
-        );
+  //       const theadCells = Array.from(
+  //         tableEl.querySelectorAll('thead tr:first-child th, thead tr:first-child td')
+  //       );
   
-        const SKIP_HEADERS = [
-          'createdat', 'updatedat', 'created_at', 'updated_at',
-          '__v', '_v', 'password', 'token', 'refreshtoken',
-        ];
+  //       const SKIP_HEADERS = [
+  //         'createdat', 'updatedat', 'created_at', 'updated_at',
+  //         '__v', '_v', 'password', 'token', 'refreshtoken',
+  //       ];
   
-        const allColumns = theadCells.map((th, idx) => ({
-          idx,
-          label: th.innerText?.trim() || th.textContent?.trim() || '',
-        }));
+  //       const allColumns = theadCells.map((th, idx) => ({
+  //         idx,
+  //         label: cleanPdfHeaderLabel(th.innerText ?? th.textContent ?? ''),
+  //       }));
   
-        const columns = allColumns.filter(
-          (col) => !SKIP_HEADERS.includes(col.label.toLowerCase().replace(/\s/g, ''))
-        );
+  //       const columns = allColumns.filter(
+  //         (col) => !SKIP_HEADERS.includes(col.label.toLowerCase().replace(/\s/g, ''))
+  //       );
   
-        const tbodyRows = Array.from(tableEl.querySelectorAll('tbody tr'));
-        const rows = tbodyRows.map((tr) => {
-          const cells = Array.from(tr.querySelectorAll('td, th'));
-          return columns.map((col) => {
-            const cell = cells[col.idx];
-            return cell ? (cell.innerText?.trim() || cell.textContent?.trim() || '') : '';
-          });
-        });
+  //       const tbodyRows = Array.from(tableEl.querySelectorAll('tbody tr'));
+  //       const rows = tbodyRows.map((tr) => {
+  //         const cells = Array.from(tr.querySelectorAll('td, th'));
+  //         return columns.map((col) => {
+  //           const cell = cells[col.idx];
+  //           return cell ? (cell.innerText?.trim() || cell.textContent?.trim() || '') : '';
+  //         });
+  //       });
   
-        const filteredRows = rows.filter((row) => row.some((cell) => cell !== ''));
-        if (filteredRows.length === 0) throw new Error('No table data found');
+  //       const filteredRows = rows.filter((row) => row.some((cell) => cell !== ''));
+  //       if (filteredRows.length === 0) throw new Error('No table data found');
   
-        const orientation = columns.length > 6 ? 'landscape' : 'portrait';
-        const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const margin = 12;
+  //       const orientation = columns.length > 6 ? 'landscape' : 'portrait';
+  //       const pdf = new jsPDF({ orientation, unit: 'mm', format: 'a4', compress: true });
+  //       const pageWidth = pdf.internal.pageSize.getWidth();
+  //       const pageHeight = pdf.internal.pageSize.getHeight();
+  //       const margin = 12;
   
-        // Add header
-        pdf.setFillColor(15, 108, 189);
-        pdf.rect(0, 0, pageWidth, 18, 'F');
-        pdf.setFontSize(11);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(255, 255, 255);
-        pdf.text('Dashboard Print', margin, 12);
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(200, 225, 255);
-        pdf.text(
-          `${filteredRows.length.toLocaleString()} records  •  ${new Date().toLocaleString()}`,
-          pageWidth - margin, 12, { align: 'right' }
-        );
+  //       // Add header
+  //       pdf.setFillColor(15, 108, 189);
+  //       pdf.rect(0, 0, pageWidth, 18, 'F');
+  //       pdf.setFontSize(11);
+  //       pdf.setFont('helvetica', 'bold');
+  //       pdf.setTextColor(255, 255, 255);
+  //       pdf.text('Dashboard Print', margin, 12);
+  //       pdf.setFontSize(8);
+  //       pdf.setFont('helvetica', 'normal');
+  //       pdf.setTextColor(200, 225, 255);
+  //       pdf.text(
+  //         `${filteredRows.length.toLocaleString()} records  •  ${new Date().toLocaleString()}`,
+  //         pageWidth - margin, 12, { align: 'right' }
+  //       );
   
-        // Add table
-        autoTable(pdf, {
-          head: [columns.map((col) => col.label)],
-          body: filteredRows,
-          startY: 22,
-          showHead: 'everyPage',
-          tableWidth: pageWidth - margin * 2,
-          styles: {
-            fontSize: 8.5,
-            cellPadding: { top: 3, right: 4, bottom: 3, left: 4 },
-            font: 'helvetica',
-            textColor: [32, 31, 30],
-            lineColor: [218, 218, 218],
-            lineWidth: 0.15,
-            overflow: 'ellipsize',
-            minCellHeight: 8,
-          },
-          headStyles: {
-            fillColor: [32, 31, 30],
-            textColor: [255, 255, 255],
-            fontStyle: 'bold',
-            fontSize: 8.5,
-            cellPadding: { top: 4, right: 4, bottom: 4, left: 4 },
-            halign: 'left',
-          },
-          alternateRowStyles: { fillColor: [245, 249, 255] },
-          bodyStyles: { halign: 'left' },
-          didParseCell: (data) => {
-            if (data.section === 'body') {
-              const val = data.cell.raw;
-              if (val !== '' && !isNaN(val)) data.cell.styles.halign = 'right';
-            }
-          },
-          didDrawPage: () => {
-            const currentPage = pdf.internal.getCurrentPageInfo().pageNumber;
-            const totalPages = pdf.internal.getNumberOfPages();
-            pdf.setDrawColor(218, 218, 218);
-            pdf.setLineWidth(0.2);
-            pdf.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
-            pdf.setFontSize(7.5);
-            pdf.setFont('helvetica', 'normal');
-            pdf.setTextColor(140, 140, 140);
-            pdf.text(`Total: ${filteredRows.length.toLocaleString()} records`, margin, pageHeight - 5);
-            pdf.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
-          },
-          margin: { top: 22, right: margin, bottom: 14, left: margin },
-        });
+  //       // Add table
+  //       autoTable(pdf, {
+  //         head: [columns.map((col) => col.label)],
+  //         body: filteredRows,
+  //         startY: 22,
+  //         showHead: 'everyPage',
+  //         tableWidth: pageWidth - margin * 2,
+  //         styles: {
+  //           fontSize: 8.5,
+  //           cellPadding: { top: 3, right: 4, bottom: 3, left: 4 },
+  //           font: 'helvetica',
+  //           textColor: [32, 31, 30],
+  //           lineColor: [218, 218, 218],
+  //           lineWidth: 0.15,
+  //           overflow: 'ellipsize',
+  //           minCellHeight: 8,
+  //         },
+  //         headStyles: {
+  //           fillColor: [32, 31, 30],
+  //           textColor: [255, 255, 255],
+  //           fontStyle: 'bold',
+  //           fontSize: 8.5,
+  //           cellPadding: { top: 4, right: 4, bottom: 4, left: 4 },
+  //           halign: 'left',
+  //         },
+  //         alternateRowStyles: { fillColor: [245, 249, 255] },
+  //         bodyStyles: { halign: 'left' },
+  //         didParseCell: (data) => {
+  //           if (data.section === 'body') {
+  //             const val = data.cell.raw;
+  //             if (val !== '' && !isNaN(val)) data.cell.styles.halign = 'right';
+  //           }
+  //         },
+  //         didDrawPage: () => {
+  //           const currentPage = pdf.internal.getCurrentPageInfo().pageNumber;
+  //           const totalPages = pdf.internal.getNumberOfPages();
+  //           pdf.setDrawColor(218, 218, 218);
+  //           pdf.setLineWidth(0.2);
+  //           pdf.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
+  //           pdf.setFontSize(7.5);
+  //           pdf.setFont('helvetica', 'normal');
+  //           pdf.setTextColor(140, 140, 140);
+  //           pdf.text(`Total: ${filteredRows.length.toLocaleString()} records`, margin, pageHeight - 5);
+  //           pdf.text(`Page ${currentPage} of ${totalPages}`, pageWidth - margin, pageHeight - 5, { align: 'right' });
+  //         },
+  //         margin: { top: 22, right: margin, bottom: 14, left: margin },
+  //       });
   
-        // Generate PDF blob and open in new window for printing
-        const pdfBlob = pdf.output('blob');
-        const pdfUrl = URL.createObjectURL(pdfBlob);
+  //       // Generate PDF blob and open in new window for printing
+  //       const pdfBlob = pdf.output('blob');
+  //       const pdfUrl = URL.createObjectURL(pdfBlob);
         
-        const printWindow = window.open(pdfUrl, '_blank');
-        if (!printWindow) {
-          setSaveStatus('Popup blocked — allow popups and try again');
-          setTimeout(() => setSaveStatus(''), 3000);
-          return;
-        }
+  //       const printWindow = window.open(pdfUrl, '_blank');
+  //       if (!printWindow) {
+  //         setSaveStatus('Popup blocked — allow popups and try again');
+  //         setTimeout(() => setSaveStatus(''), 3000);
+  //         return;
+  //       }
         
-        // Clean up URL object after a delay
-        setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
+  //       // Clean up URL object after a delay
+  //       setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
         
-        setSaveStatus(`✓ Print ready — ${filteredRows.length.toLocaleString()} records`);
-        setTimeout(() => setSaveStatus(''), 3000);
-        return;
-      }
+  //       setSaveStatus(`✓ Print ready — ${filteredRows.length.toLocaleString()} records`);
+  //       setTimeout(() => setSaveStatus(''), 3000);
+  //       return;
+  //     }
   
-      // ══════════════════════════════════════════════════════════════════════
-      // MODE 2 — CHARTS (ECharts canvas) + optional table
-      // Each chart card captured individually → one PDF page per chart
-      // ══════════════════════════════════════════════════════════════════════
+  //     // ══════════════════════════════════════════════════════════════════════
+  //     // MODE 2 — CHARTS (ECharts canvas) + optional table
+  //     // Each chart card captured individually → one PDF page per chart
+  //     // ══════════════════════════════════════════════════════════════════════
   
-      // Find all chart card containers inside the playground
-      const CHART_CARD_SELECTORS = [
-        '.bi-chart-card',
-        '.bi-chart-item',
-        '.bi-chart-wrapper',
-        '.chart-container',
-        '.recharts-wrapper',
-        '[class*="chart-card"]',
-        '[class*="chart-item"]',
-        '[class*="chart-wrapper"]',
-      ];
+  //     // Find all chart card containers inside the playground
+  //     const CHART_CARD_SELECTORS = [
+  //       '.bi-chart-card',
+  //       '.bi-chart-item',
+  //       '.bi-chart-wrapper',
+  //       '.chart-container',
+  //       '.recharts-wrapper',
+  //       '[class*="chart-card"]',
+  //       '[class*="chart-item"]',
+  //       '[class*="chart-wrapper"]',
+  //     ];
   
-      // Try each selector until we find chart cards
-      let chartCards = [];
-      for (const sel of CHART_CARD_SELECTORS) {
-        const found = Array.from(target.querySelectorAll(sel));
-        if (found.length > 0) {
-          chartCards = found;
-          break;
-        }
-      }
+  //     // Try each selector until we find chart cards
+  //     let chartCards = [];
+  //     for (const sel of CHART_CARD_SELECTORS) {
+  //       const found = Array.from(target.querySelectorAll(sel));
+  //       if (found.length > 0) {
+  //         chartCards = found;
+  //         break;
+  //       }
+  //     }
   
-      // Fallback: if no specific card selector matched,
-      // find all direct children that contain a canvas or table
-      if (chartCards.length === 0) {
-        chartCards = Array.from(target.children).filter((child) => {
-          return child.querySelector('canvas') || child.querySelector('table');
-        });
-      }
+  //     // Fallback: if no specific card selector matched,
+  //     // find all direct children that contain a canvas or table
+  //     if (chartCards.length === 0) {
+  //       chartCards = Array.from(target.children).filter((child) => {
+  //         return child.querySelector('canvas') || child.querySelector('table');
+  //       });
+  //     }
   
-      // Last resort: capture entire playground as one page
-      if (chartCards.length === 0) {
-        chartCards = [target];
-      }
+  //     // Last resort: capture entire playground as one page
+  //     if (chartCards.length === 0) {
+  //       chartCards = [target];
+  //     }
   
-      setSaveStatus(`Found ${chartCards.length} chart(s) — preparing print...`);
+  //     setSaveStatus(`Found ${chartCards.length} chart(s) — preparing print...`);
   
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4',
-        compress: false,
-      });
+  //     const pdf = new jsPDF({
+  //       orientation: 'landscape',
+  //       unit: 'mm',
+  //       format: 'a4',
+  //       compress: false,
+  //     });
   
-      const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
-      const pageHeight = pdf.internal.pageSize.getHeight();  // 210mm
-      const margin = 10;
-      const headerH = 14;
-      const footerH = 10;
-      const usableH = pageHeight - headerH - footerH - margin;
-      const usableW = pageWidth - margin * 2;
+  //     const pageWidth = pdf.internal.pageSize.getWidth();   // 297mm
+  //     const pageHeight = pdf.internal.pageSize.getHeight();  // 210mm
+  //     const margin = 10;
+  //     const headerH = 14;
+  //     const footerH = 10;
+  //     const usableH = pageHeight - headerH - footerH - margin;
+  //     const usableW = pageWidth - margin * 2;
   
-      const drawPageHeader = (pdfInstance, title, pageNum, totalPages) => {
-        pdfInstance.setFillColor(15, 108, 189);
-        pdfInstance.rect(0, 0, pageWidth, headerH, 'F');
-        pdfInstance.setFontSize(9);
-        pdfInstance.setFont('helvetica', 'bold');
-        pdfInstance.setTextColor(255, 255, 255);
-        pdfInstance.text('Dashboard Print', margin, 9);
-        pdfInstance.setFontSize(7.5);
-        pdfInstance.setFont('helvetica', 'normal');
-        pdfInstance.setTextColor(200, 225, 255);
-        if (title) pdfInstance.text(title, pageWidth / 2, 9, { align: 'center' });
-        pdfInstance.text(
-          `Page ${pageNum} of ${totalPages}  •  ${new Date().toLocaleDateString()}`,
-          pageWidth - margin, 9, { align: 'right' }
-        );
-      };
+  //     const drawPageHeader = (pdfInstance, title, pageNum, totalPages) => {
+  //       pdfInstance.setFillColor(15, 108, 189);
+  //       pdfInstance.rect(0, 0, pageWidth, headerH, 'F');
+  //       pdfInstance.setFontSize(9);
+  //       pdfInstance.setFont('helvetica', 'bold');
+  //       pdfInstance.setTextColor(255, 255, 255);
+  //       pdfInstance.text('Dashboard Print', margin, 9);
+  //       pdfInstance.setFontSize(7.5);
+  //       pdfInstance.setFont('helvetica', 'normal');
+  //       pdfInstance.setTextColor(200, 225, 255);
+  //       if (title) pdfInstance.text(title, pageWidth / 2, 9, { align: 'center' });
+  //       pdfInstance.text(
+  //         `Page ${pageNum} of ${totalPages}  •  ${new Date().toLocaleDateString()}`,
+  //         pageWidth - margin, 9, { align: 'right' }
+  //       );
+  //     };
   
-      const drawPageFooter = (pdfInstance) => {
-        pdfInstance.setDrawColor(218, 218, 218);
-        pdfInstance.setLineWidth(0.2);
-        pdfInstance.line(margin, pageHeight - footerH, pageWidth - margin, pageHeight - footerH);
-        pdfInstance.setFontSize(7);
-        pdfInstance.setFont('helvetica', 'normal');
-        pdfInstance.setTextColor(160, 160, 160);
-        pdfInstance.text('Generated by BI Dashboard', margin, pageHeight - 5);
-      };
+  //     const drawPageFooter = (pdfInstance) => {
+  //       pdfInstance.setDrawColor(218, 218, 218);
+  //       pdfInstance.setLineWidth(0.2);
+  //       pdfInstance.line(margin, pageHeight - footerH, pageWidth - margin, pageHeight - footerH);
+  //       pdfInstance.setFontSize(7);
+  //       pdfInstance.setFont('helvetica', 'normal');
+  //       pdfInstance.setTextColor(160, 160, 160);
+  //       pdfInstance.text('Generated by BI Dashboard', margin, pageHeight - 5);
+  //     };
   
-      let isFirstPage = true;
+  //     let isFirstPage = true;
   
-      for (let i = 0; i < chartCards.length; i++) {
-        const card = chartCards[i];
+  //     for (let i = 0; i < chartCards.length; i++) {
+  //       const card = chartCards[i];
   
-        // ── If card contains a table → use autoTable for this page ──────────
-        const cardTable = card.querySelector('table');
-        const cardCanvas = card.querySelector('canvas');
+  //       // ── If card contains a table → use autoTable for this page ──────────
+  //       const cardTable = card.querySelector('table');
+  //       const cardCanvas = card.querySelector('canvas');
   
-        if (cardTable && !cardCanvas) {
-          // Table chart — use autoTable
-          const theadCells = Array.from(
-            cardTable.querySelectorAll('thead tr:first-child th, thead tr:first-child td')
-          );
+  //       if (cardTable && !cardCanvas) {
+  //         // Table chart — use autoTable
+  //         const theadCells = Array.from(
+  //           cardTable.querySelectorAll('thead tr:first-child th, thead tr:first-child td')
+  //         );
   
-          const SKIP_HEADERS = [
-            'createdat', 'updatedat', 'created_at', 'updated_at',
-            '__v', '_v', 'password', 'token', 'refreshtoken',
-          ];
+  //         const SKIP_HEADERS = [
+  //           'createdat', 'updatedat', 'created_at', 'updated_at',
+  //           '__v', '_v', 'password', 'token', 'refreshtoken',
+  //         ];
   
-          const allColumns = theadCells.map((th, idx) => ({
-            idx,
-            label: th.innerText?.trim() || th.textContent?.trim() || '',
-          }));
-          const columns = allColumns.filter(
-            (col) => !SKIP_HEADERS.includes(col.label.toLowerCase().replace(/\s/g, ''))
-          );
+  //         const allColumns = theadCells.map((th, idx) => ({
+  //           idx,
+  //           label: cleanPdfHeaderLabel(th.innerText ?? th.textContent ?? ''),
+  //         }));
+  //         const columns = allColumns.filter(
+  //           (col) => !SKIP_HEADERS.includes(col.label.toLowerCase().replace(/\s/g, ''))
+  //         );
   
-          const tbodyRows = Array.from(cardTable.querySelectorAll('tbody tr'));
-          const rows = tbodyRows.map((tr) => {
-            const cells = Array.from(tr.querySelectorAll('td, th'));
-            return columns.map((col) => {
-              const cell = cells[col.idx];
-              return cell ? (cell.innerText?.trim() || cell.textContent?.trim() || '') : '';
-            });
-          });
-          const filteredRows = rows.filter((row) => row.some((c) => c !== ''));
+  //         const tbodyRows = Array.from(cardTable.querySelectorAll('tbody tr'));
+  //         const rows = tbodyRows.map((tr) => {
+  //           const cells = Array.from(tr.querySelectorAll('td, th'));
+  //           return columns.map((col) => {
+  //             const cell = cells[col.idx];
+  //             return cell ? (cell.innerText?.trim() || cell.textContent?.trim() || '') : '';
+  //           });
+  //         });
+  //         const filteredRows = rows.filter((row) => row.some((c) => c !== ''));
   
-          if (!isFirstPage) pdf.addPage();
-          isFirstPage = false;
+  //         if (!isFirstPage) pdf.addPage();
+  //         isFirstPage = false;
   
-          drawPageHeader(pdf, 'Table', i + 1, chartCards.length);
+  //         drawPageHeader(pdf, 'Table', i + 1, chartCards.length);
   
-          const tableMargin = margin;
-          autoTable(pdf, {
-            head: [columns.map((col) => col.label)],
-            body: filteredRows,
-            startY: headerH + 2,
-            showHead: 'everyPage',
-            tableWidth: pageWidth - tableMargin * 2,
-            styles: {
-              fontSize: 7.5,
-              cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
-              font: 'helvetica',
-              textColor: [32, 31, 30],
-              lineColor: [218, 218, 218],
-              lineWidth: 0.15,
-              overflow: 'ellipsize',
-            },
-            headStyles: {
-              fillColor: [32, 31, 30],
-              textColor: [255, 255, 255],
-              fontStyle: 'bold',
-              fontSize: 7.5,
-            },
-            alternateRowStyles: { fillColor: [245, 249, 255] },
-            didDrawPage: () => {
-              drawPageFooter(pdf);
-            },
-            margin: { top: headerH + 2, right: tableMargin, bottom: footerH + 2, left: tableMargin },
-          });
+  //         const tableMargin = margin;
+  //         autoTable(pdf, {
+  //           head: [columns.map((col) => col.label)],
+  //           body: filteredRows,
+  //           startY: headerH + 2,
+  //           showHead: 'everyPage',
+  //           tableWidth: pageWidth - tableMargin * 2,
+  //           styles: {
+  //             fontSize: 7.5,
+  //             cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+  //             font: 'helvetica',
+  //             textColor: [32, 31, 30],
+  //             lineColor: [218, 218, 218],
+  //             lineWidth: 0.15,
+  //             overflow: 'ellipsize',
+  //           },
+  //           headStyles: {
+  //             fillColor: [32, 31, 30],
+  //             textColor: [255, 255, 255],
+  //             fontStyle: 'bold',
+  //             fontSize: 7.5,
+  //           },
+  //           alternateRowStyles: { fillColor: [245, 249, 255] },
+  //           didDrawPage: () => {
+  //             drawPageFooter(pdf);
+  //           },
+  //           margin: { top: headerH + 2, right: tableMargin, bottom: footerH + 2, left: tableMargin },
+  //         });
   
-          continue; // move to next chart card
-        }
+  //         continue; // move to next chart card
+  //       }
   
-        // ── Chart card (ECharts canvas) → html2canvas capture ───────────────
+  //       // ── Chart card (ECharts canvas) → html2canvas capture ───────────────
   
-        // Temporarily make card fully visible for capture
-        const savedCardStyles = {
-          height: card.style.height,
-          maxHeight: card.style.maxHeight,
-          overflow: card.style.overflow,
-          position: card.style.position,
-        };
+  //       // Temporarily make card fully visible for capture
+  //       const savedCardStyles = {
+  //         height: card.style.height,
+  //         maxHeight: card.style.maxHeight,
+  //         overflow: card.style.overflow,
+  //         position: card.style.position,
+  //       };
   
-        card.style.overflow = 'visible';
-        card.style.maxHeight = 'none';
+  //       card.style.overflow = 'visible';
+  //       card.style.maxHeight = 'none';
   
-        // Also expand any inner clipped elements
-        const innerClipped = Array.from(card.querySelectorAll('*')).filter((el) => {
-          const s = window.getComputedStyle(el);
-          return (
-            ['auto', 'scroll', 'hidden'].includes(s.overflow) ||
-            ['auto', 'scroll', 'hidden'].includes(s.overflowY)
-          );
-        });
-        const innerSaved = innerClipped.map((el) => ({
-          el,
-          overflow: el.style.overflow,
-          overflowY: el.style.overflowY,
-          height: el.style.height,
-          maxHeight: el.style.maxHeight,
-        }));
-        innerClipped.forEach((el) => {
-          el.style.overflow = 'visible';
-          el.style.overflowY = 'visible';
-          el.style.maxHeight = 'none';
-        });
+  //       // Also expand any inner clipped elements
+  //       const innerClipped = Array.from(card.querySelectorAll('*')).filter((el) => {
+  //         const s = window.getComputedStyle(el);
+  //         return (
+  //           ['auto', 'scroll', 'hidden'].includes(s.overflow) ||
+  //           ['auto', 'scroll', 'hidden'].includes(s.overflowY)
+  //         );
+  //       });
+  //       const innerSaved = innerClipped.map((el) => ({
+  //         el,
+  //         overflow: el.style.overflow,
+  //         overflowY: el.style.overflowY,
+  //         height: el.style.height,
+  //         maxHeight: el.style.maxHeight,
+  //       }));
+  //       innerClipped.forEach((el) => {
+  //         el.style.overflow = 'visible';
+  //         el.style.overflowY = 'visible';
+  //         el.style.maxHeight = 'none';
+  //       });
   
-        // Wait for ECharts to finish rendering animations
-        await new Promise((r) => setTimeout(r, 400));
+  //       // Wait for ECharts to finish rendering animations
+  //       await new Promise((r) => setTimeout(r, 400));
   
-        let capturedCanvas;
-        try {
-          capturedCanvas = await html2canvas(card, {
-            backgroundColor: '#ffffff',
-            scale: 3,
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-            imageTimeout: 15000,
-            removeContainer: true,
-            width: card.scrollWidth,
-            height: card.scrollHeight,
-            windowWidth: card.scrollWidth,
-            windowHeight: card.scrollHeight,
-            scrollX: 0,
-            scrollY: 0,
-            foreignObjectRendering: false,
-          });
-        } catch (captureErr) {
-          console.warn(`Chart ${i + 1} capture failed, skipping:`, captureErr);
-          continue;
-        }
+  //       let capturedCanvas;
+  //       try {
+  //         capturedCanvas = await html2canvas(card, {
+  //           backgroundColor: '#ffffff',
+  //           scale: 3,
+  //           useCORS: true,
+  //           allowTaint: true,
+  //           logging: false,
+  //           imageTimeout: 15000,
+  //           removeContainer: true,
+  //           width: card.scrollWidth,
+  //           height: card.scrollHeight,
+  //           windowWidth: card.scrollWidth,
+  //           windowHeight: card.scrollHeight,
+  //           scrollX: 0,
+  //           scrollY: 0,
+  //           foreignObjectRendering: false,
+  //         });
+  //       } catch (captureErr) {
+  //         console.warn(`Chart ${i + 1} capture failed, skipping:`, captureErr);
+  //         continue;
+  //       }
   
-        // Restore card styles
-        card.style.height = savedCardStyles.height;
-        card.style.maxHeight = savedCardStyles.maxHeight;
-        card.style.overflow = savedCardStyles.overflow;
-        card.style.position = savedCardStyles.position;
-        innerSaved.forEach(({ el, overflow, overflowY, height, maxHeight }) => {
-          el.style.overflow = overflow;
-          el.style.overflowY = overflowY;
-          el.style.height = height;
-          el.style.maxHeight = maxHeight;
-        });
+  //       // Restore card styles
+  //       card.style.height = savedCardStyles.height;
+  //       card.style.maxHeight = savedCardStyles.maxHeight;
+  //       card.style.overflow = savedCardStyles.overflow;
+  //       card.style.position = savedCardStyles.position;
+  //       innerSaved.forEach(({ el, overflow, overflowY, height, maxHeight }) => {
+  //         el.style.overflow = overflow;
+  //         el.style.overflowY = overflowY;
+  //         el.style.height = height;
+  //         el.style.maxHeight = maxHeight;
+  //       });
   
-        // Add to PDF
-        if (!isFirstPage) pdf.addPage();
-        isFirstPage = false;
+  //       // Add to PDF
+  //       if (!isFirstPage) pdf.addPage();
+  //       isFirstPage = false;
   
-        // Get chart title from card DOM if available
-        const titleEl = card.querySelector(
-          '.bi-chart-title, .chart-title, [class*="title"], h3, h4'
-        );
-        const chartTitle = titleEl?.innerText?.trim() || `Chart ${i + 1}`;
+  //       // Get chart title from card DOM if available
+  //       const titleEl = card.querySelector(
+  //         '.bi-chart-title, .chart-title, [class*="title"], h3, h4'
+  //       );
+  //       const chartTitle = titleEl?.innerText?.trim() || `Chart ${i + 1}`;
   
-        drawPageHeader(pdf, chartTitle, i + 1, chartCards.length);
-        drawPageFooter(pdf);
+  //       drawPageHeader(pdf, chartTitle, i + 1, chartCards.length);
+  //       drawPageFooter(pdf);
   
-        // Fit image within usable area maintaining aspect ratio
-        const imgData = capturedCanvas.toDataURL('image/png');
-        const imgRatio = capturedCanvas.width / capturedCanvas.height;
-        const maxW = usableW;
-        const maxH = usableH;
+  //       // Fit image within usable area maintaining aspect ratio
+  //       const imgData = capturedCanvas.toDataURL('image/png');
+  //       const imgRatio = capturedCanvas.width / capturedCanvas.height;
+  //       const maxW = usableW;
+  //       const maxH = usableH;
   
-        let imgW = maxW;
-        let imgH = imgW / imgRatio;
+  //       let imgW = maxW;
+  //       let imgH = imgW / imgRatio;
   
-        if (imgH > maxH) {
-          imgH = maxH;
-          imgW = imgH * imgRatio;
-        }
+  //       if (imgH > maxH) {
+  //         imgH = maxH;
+  //         imgW = imgH * imgRatio;
+  //       }
   
-        // Center horizontally
-        const xOffset = margin + (usableW - imgW) / 2;
-        const yOffset = headerH + (usableH - imgH) / 2 + margin / 2;
+  //       // Center horizontally
+  //       const xOffset = margin + (usableW - imgW) / 2;
+  //       const yOffset = headerH + (usableH - imgH) / 2 + margin / 2;
   
-        pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgW, imgH, '', 'FAST');
-      }
+  //       pdf.addImage(imgData, 'PNG', xOffset, yOffset, imgW, imgH, '', 'FAST');
+  //     }
   
-      // Generate PDF blob and open in new window for printing
-      const pdfBlob = pdf.output('blob');
-      const pdfUrl = URL.createObjectURL(pdfBlob);
+  //     // Generate PDF blob and open in new window for printing
+  //     const pdfBlob = pdf.output('blob');
+  //     const pdfUrl = URL.createObjectURL(pdfBlob);
       
-      const printWindow = window.open(pdfUrl, '_blank');
-      if (!printWindow) {
-        setSaveStatus('Popup blocked — allow popups and try again');
-        setTimeout(() => setSaveStatus(''), 3000);
-        return;
-      }
+  //     const printWindow = window.open(pdfUrl, '_blank');
+  //     if (!printWindow) {
+  //       setSaveStatus('Popup blocked — allow popups and try again');
+  //       setTimeout(() => setSaveStatus(''), 3000);
+  //       return;
+  //     }
       
-      // Clean up URL object after a delay
-      setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
+  //     // Clean up URL object after a delay
+  //     setTimeout(() => URL.revokeObjectURL(pdfUrl), 1000);
       
-      setSaveStatus(`✓ Print ready — ${chartCards.length} chart(s)`);
-      setTimeout(() => setSaveStatus(''), 3000);
+  //     setSaveStatus(`✓ Print ready — ${chartCards.length} chart(s)`);
+  //     setTimeout(() => setSaveStatus(''), 3000);
   
-    } catch (error) {
-      console.error('Print failed:', error);
-      setSaveStatus(error.message || 'Print failed');
-      setTimeout(() => setSaveStatus(''), 3000);
-    }
-  }, []);
+  //   } catch (error) {
+  //     console.error('Print failed:', error);
+  //     setSaveStatus(error.message || 'Print failed');
+  //     setTimeout(() => setSaveStatus(''), 3000);
+  //   }
+  // }, []);
   
   
 
   const handleDownloadJSON = useCallback(() => {
+    const name = (dashboardName && dashboardName.trim()) || 'My Dashboard';
     const dashboardData = {
-      name: 'My Dashboard',
+      name,
       charts,
       layouts,
+      logo: dashboardLogo || undefined,
       exportedAt: new Date().toISOString(),
     };
     const blob = new Blob([JSON.stringify(dashboardData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dashboard-${Date.now()}.json`;
+    const safeName = name.replace(/[^\w\s-]/g, '').replace(/\s+/g, '-') || 'dashboard';
+    a.download = `${safeName}-${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setSaveStatus('JSON downloaded');
     setTimeout(() => setSaveStatus(''), 2000);
-  }, [charts, layouts]);
+  }, [charts, layouts, dashboardName, dashboardLogo]);
 
   // Download PNG (canvas export)
   const handleDownloadPNG = useCallback(async () => {
@@ -2056,6 +2166,7 @@ const BiDashboard = () => {
   // complete work
   const handleDownloadPDF = useCallback(async () => {
     setSaveStatus('Generating PDF...');
+    const pdfTitle = (dashboardName && String(dashboardName).trim()) || 'Dashboard Export';
 
     try {
       const { jsPDF } = await import('jspdf');
@@ -2087,7 +2198,7 @@ const BiDashboard = () => {
 
         const allColumns = theadCells.map((th, idx) => ({
           idx,
-          label: th.innerText?.trim() || th.textContent?.trim() || '',
+          label: cleanPdfHeaderLabel(th.innerText ?? th.textContent ?? ''),
         }));
 
         const columns = allColumns.filter(
@@ -2111,13 +2222,25 @@ const BiDashboard = () => {
         const pageWidth = pdf.internal.pageSize.getWidth();
         const pageHeight = pdf.internal.pageSize.getHeight();
         const margin = 12;
+        const headerH = 18;
 
         pdf.setFillColor(15, 108, 189);
-        pdf.rect(0, 0, pageWidth, 18, 'F');
+        pdf.rect(0, 0, pageWidth, headerH, 'F');
+        let textLeft = margin;
+        if (dashboardLogo && typeof dashboardLogo === 'string' && dashboardLogo.startsWith('data:image')) {
+          try {
+            const logoW = 16;
+            const logoH = 12;
+            pdf.addImage(dashboardLogo, 'PNG', margin, (headerH - logoH) / 2, logoW, logoH, '', 'FAST');
+            textLeft = margin + logoW + 4;
+          } catch (err) {
+            console.warn('PDF logo draw failed', err);
+          }
+        }
         pdf.setFontSize(11);
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(255, 255, 255);
-        pdf.text('Dashboard Export', margin, 12);
+        pdf.text(pdfTitle, textLeft, 12);
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(200, 225, 255);
@@ -2240,10 +2363,21 @@ const BiDashboard = () => {
       const drawPageHeader = (pdfInstance, title, pageNum, totalPages) => {
         pdfInstance.setFillColor(15, 108, 189);
         pdfInstance.rect(0, 0, pageWidth, headerH, 'F');
+        let textLeft = margin;
+        if (dashboardLogo && typeof dashboardLogo === 'string' && dashboardLogo.startsWith('data:image')) {
+          try {
+            const logoW = 14;
+            const logoH = 10;
+            pdfInstance.addImage(dashboardLogo, 'PNG', margin, (headerH - logoH) / 2, logoW, logoH, '', 'FAST');
+            textLeft = margin + logoW + 4;
+          } catch (err) {
+            console.warn('PDF logo draw failed', err);
+          }
+        }
         pdfInstance.setFontSize(9);
         pdfInstance.setFont('helvetica', 'bold');
         pdfInstance.setTextColor(255, 255, 255);
-        pdfInstance.text('Dashboard Export', margin, 9);
+        pdfInstance.text(pdfTitle, textLeft, 9);
         pdfInstance.setFontSize(7.5);
         pdfInstance.setFont('helvetica', 'normal');
         pdfInstance.setTextColor(200, 225, 255);
@@ -2286,7 +2420,7 @@ const BiDashboard = () => {
 
           const allColumns = theadCells.map((th, idx) => ({
             idx,
-            label: th.innerText?.trim() || th.textContent?.trim() || '',
+            label: cleanPdfHeaderLabel(th.innerText ?? th.textContent ?? ''),
           }));
           const columns = allColumns.filter(
             (col) => !SKIP_HEADERS.includes(col.label.toLowerCase().replace(/\s/g, ''))
@@ -2455,7 +2589,7 @@ const BiDashboard = () => {
       setSaveStatus(error.message || 'PDF export failed');
       setTimeout(() => setSaveStatus(''), 3000);
     }
-  }, []);
+  }, [dashboardLogo, dashboardName]);
 
 
 
@@ -2477,28 +2611,33 @@ const BiDashboard = () => {
         aria-hidden
       />
 
+      <input
+        ref={logoInputRef}
+        type="file"
+        accept="image/*"
+        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, overflow: 'hidden' }}
+        aria-hidden
+        onChange={(e) => {
+          const file = e.target?.files?.[0];
+          if (!file || !file.type.startsWith('image/')) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result;
+            if (typeof dataUrl === 'string') setDashboardLogo(dataUrl);
+          };
+          reader.readAsDataURL(file);
+          e.target.value = '';
+        }}
+      />
+
       {/* Main Header Section */}
       <header className={styles.biMainHeader}>
         <div className={styles.biHeaderLeft}>
-          {/* <div className={styles.biLogoContainer}> */}
-          {/* <img 
-              src="/logo.png" 
-              alt="Power BI Lite" 
-              className={styles.biLogo}
-              onError={(e) => {
-                // Fallback if logo doesn't exist - show icon/text instead
-                e.target.style.display = 'none';
-                const fallback = e.target.nextSibling;
-                if (fallback) fallback.style.display = 'flex';
-              }}
-            /> */}
-          {/* <div className={styles.biLogoFallback} style={{ display: 'none' }}>
-              <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="40" height="40" rx="8" fill="var(--color-blue)"/>
-                <path d="M12 20L18 26L28 14" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div> */}
-          {/* </div> */}
+          {dashboardLogo ? (
+            <div className={styles.biLogoContainer}>
+              <img src={dashboardLogo} alt="Dashboard logo" className={styles.biLogo} />
+            </div>
+          ) : null}
           <h1 className={styles.biAppTitle}>Power BI Lite</h1>
         </div>
         <div className={styles.biHeaderRight}>
@@ -2521,8 +2660,17 @@ const BiDashboard = () => {
         fileInputRef={fileInputRef}
         recordCount={recordCount}
         exportPdfInProgress={exportPdfInProgress}
-
-      // onOpenCopilot={() => setCopilotOpen(true)}
+        onViewData={() => setViewDataOpen(true)}
+        dashboardName={dashboardName}
+        onDashboardNameChange={setDashboardName}
+        savedDashboards={savedDashboards}
+        onLoadDashboardById={handleLoadDashboardById}
+        dashboardLogo={dashboardLogo}
+        onSetLogo={() => logoInputRef.current?.click()}
+        onClearLogo={() => setDashboardLogo(null)}
+        dataFilter={dataFilter}
+        onDataFilterChange={setDataFilter}
+        dateFields={fields.filter((f) => f.type === 'date' || /date|time|created|updated|year|month/i.test(f.name || ''))}
       />
 
       <div className={`${styles.biMain} bi-main`}>
@@ -2537,16 +2685,15 @@ const BiDashboard = () => {
         <main className={`${styles.biCanvas} bi-canvas`}>
           <ChartCanvas
             charts={charts}
-            // isExportMode={isExportMode}
             selectedChartId={selectedChartId}
             onSelect={handleSelectChart}
             onLayoutChange={(allLayouts) => dispatch(setLayouts(allLayouts))}
             savedLayouts={layouts}
             onRefresh={handleRefreshChart}
-            // on key press delete chart
             onRemove={handleRequestRemoveChart}
             onDuplicate={handleDuplicateChart}
             onChartUpdate={handleUpdateChart}
+            globalFilter={dataFilter}
           />
         </main>
 
@@ -2555,12 +2702,22 @@ const BiDashboard = () => {
             config={selectedChart}
             fields={fields}
             layouts={layouts}
+            recordCount={recordCount}
             onUpdate={(updates) => selectedChart && handleUpdateChart(selectedChart.id, updates)}
             onRemove={handleRequestRemoveChart}
             onLayoutSizeChange={(id, size) => dispatch(updateChartLayout({ id, ...size }))}
           />
         </aside>
       </div>
+
+      <ViewDataModal
+        isOpen={viewDataOpen}
+        onClose={() => setViewDataOpen(false)}
+        collection={collection}
+        fields={fields}
+        recordCount={recordCount}
+        dataFilter={dataFilter}
+      />
 
       {/* Delete chart confirmation modal */}
       {chartToDeleteId && (

@@ -45,6 +45,10 @@ export default async function handler(req, res) {
       if (key) items = data[key];
     }
 
+    if (config.filter && config.filter.field) {
+      items = applyDateFilter(items, config.filter);
+    }
+
     if (isTable) {
       const result = getTableData(items, config.selectedFields, config.sortBy, config.sortOrder, config.dimension, config.measure, config.limit);
       return res.status(200).json(result);
@@ -192,4 +196,79 @@ function getNestedValue(obj, path) {
     current = current?.[k];
   }
   return current;
+}
+
+/**
+ * Parse a value (ISO string, timestamp, or Date) to a Date object
+ */
+function parseDate(val) {
+  if (val == null) return null;
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'number') {
+    const d = new Date(val);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(val);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Get quarter (1-4) from a Date
+ */
+function getQuarter(d) {
+  if (!d || !(d instanceof Date)) return 0;
+  const m = d.getMonth() + 1;
+  return Math.ceil(m / 3);
+}
+
+/**
+ * Apply date filter: keep items where the filter field matches the filter type (date range, month, quarter, year)
+ */
+function applyDateFilter(items, filter) {
+  const { field, type, from, to, value } = filter;
+  if (!field || !items.length) return items;
+
+  return items.filter((doc) => {
+    const raw = getNestedValue(doc, field);
+    const d = parseDate(raw);
+    if (!d) return false;
+
+    switch (type) {
+      case 'date': {
+        if (from) {
+          const fromDate = parseDate(from);
+          if (fromDate && d < fromDate) return false;
+        }
+        if (to) {
+          const toDate = parseDate(to);
+          if (toDate) {
+            const toEnd = new Date(toDate);
+            toEnd.setHours(23, 59, 59, 999);
+            if (d > toEnd) return false;
+          }
+        }
+        return true;
+      }
+      case 'month': {
+        if (!value || !/^\d{4}-\d{2}$/.test(String(value).trim())) return true;
+        const [y, m] = String(value).trim().split('-').map(Number);
+        return d.getFullYear() === y && d.getMonth() + 1 === m;
+      }
+      case 'quarter': {
+        if (!value) return true;
+        const match = String(value).trim().match(/^(\d{4})-Q([1-4])$/i);
+        if (!match) return true;
+        const y = parseInt(match[1], 10);
+        const q = parseInt(match[2], 10);
+        return d.getFullYear() === y && getQuarter(d) === q;
+      }
+      case 'year': {
+        if (!value) return true;
+        const y = parseInt(String(value).trim(), 10);
+        return !Number.isNaN(y) && d.getFullYear() === y;
+      }
+      default:
+        return true;
+    }
+  });
 }
