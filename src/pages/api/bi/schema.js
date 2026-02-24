@@ -35,27 +35,45 @@ const getBackendUrl = () =>
         }
         throw new Error(`Backend error: ${response.status}`);
       }
-  
+
       const data = await response.json();
       let items = Array.isArray(data) ? data : data?.data || data?.results || [];
       if (!items.length && data && typeof data === 'object') {
         const key = Object.keys(data).find((k) => Array.isArray(data[k]));
         if (key) items = data[key];
       }
-  
+
+      // Fetch record count from metadata endpoint first (so we always have it)
+      let recordCount = null;
+      try {
+        const metaUrl = `${getBackendUrl()}/api/v1/collection/${collection}/meta`;
+        const metaResponse = await fetch(metaUrl);
+        if (metaResponse.ok) {
+          const metaData = await metaResponse.json();
+          recordCount = metaData.recordCount != null ? metaData.recordCount : null;
+        }
+      } catch (metaError) {
+        // Metadata endpoint might not exist on older backends
+        console.log('[BI Schema] Metadata endpoint not available:', metaError.message);
+      }
+
       if (!items.length) {
+        // Return fields array and recordCount so UI can show count even with no sample
+        if (recordCount !== null) {
+          return res.status(200).json({ fields: [], recordCount });
+        }
         return res.status(200).json([]);
       }
-  
+
       // Infer schema from first record
       const sample = items[0];
       const schema = [];
-  
+
       for (const [key, value] of Object.entries(sample)) {
         // Skip MongoDB internal fields
         if (key.startsWith('_') && key !== '_id') continue;
         if (key === '__v') continue;
-  
+
         let type = 'string';
         if (value === null || value === undefined) {
           type = 'string'; // Default to string for null values
@@ -68,29 +86,15 @@ const getBackendUrl = () =>
         } else if (typeof value === 'object') {
           type = 'string'; // Objects treated as string for now
         }
-  
-      schema.push({ name: key, type });
-    }
 
-    // Try to fetch record count from metadata endpoint
-    let recordCount = null;
-    try {
-      const metaUrl = `${getBackendUrl()}/api/v1/collection/${collection}/meta`;
-      const metaResponse = await fetch(metaUrl);
-      if (metaResponse.ok) {
-        const metaData = await metaResponse.json();
-        recordCount = metaData.recordCount || null;
+        schema.push({ name: key, type });
       }
-    } catch (metaError) {
-      // Metadata endpoint might not exist, that's okay
-      console.log('[BI Schema] Metadata endpoint not available:', metaError.message);
-    }
 
-    // Return schema with recordCount if available
-    if (recordCount !== null) {
-      return res.status(200).json({ fields: schema, recordCount });
-    }
-    return res.status(200).json(schema);
+      // Always return object with recordCount when we have it
+      if (recordCount !== null) {
+        return res.status(200).json({ fields: schema, recordCount });
+      }
+      return res.status(200).json(schema);
     } catch (error) {
       console.error('[BI Schema Error]', error);
       return res.status(500).json({

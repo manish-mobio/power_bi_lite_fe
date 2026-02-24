@@ -85,9 +85,16 @@ const dashboardSlice = createSlice({
     },
 
     loadDashboard: (state, action) => {
-      const { charts, layouts } = action.payload || {};
+      const { charts, layouts, collection } = action.payload || {};
+      if (collection != null && String(collection).trim()) {
+        state.collection = String(collection).trim();
+      }
       if (charts && Array.isArray(charts)) {
         state.charts = charts.map((c) => ({ ...createDefaultChartConfig(), ...c }));
+        if (state.charts.length && (collection == null || !String(collection).trim())) {
+          const firstCollection = state.charts[0].collection;
+          if (firstCollection) state.collection = firstCollection;
+        }
       }
       if (layouts && typeof layouts === 'object') {
         state.layouts = {};

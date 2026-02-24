@@ -29,9 +29,9 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       .then((data) => {
         if (cancelled) return;
         if (Array.isArray(data)) {
-          // Legacy format: just array of fields
+          // Legacy format: just array of fields (no recordCount)
           setFields(data);
-          if (onFieldsLoaded) onFieldsLoaded({ fields: data });
+          if (onFieldsLoaded) onFieldsLoaded({ fields: data, recordCount: null });
         } else if (data?.fields || data?.schema) {
           // New format: object with fields and recordCount
           const fieldsData = data.fields || data.schema || [];

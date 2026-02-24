@@ -4,7 +4,7 @@
  */
 import React, { useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { AGG_OPS, CHART_TYPES,CHART_TYPE_ICONS, SORT_ORDERS, SORT_BY_OPTIONS } from '@/utils/chartTypes';
+import { AGG_OPS, CHART_TYPES, CHART_TYPE_ICONS, SORT_ORDERS, SORT_BY_OPTIONS } from '@/utils/chartTypes';
 import { Select } from 'antd';
 const { Option } = Select;
 
@@ -136,7 +136,7 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
         {!isTable && (
           <>
             <div className="bi-config-row">
-              <label>Group By</label>
+              <label>X-axis</label>
               <select
                 value={config.dimension}
                 onChange={(e) => handleChange('dimension', e.target.value)}
@@ -149,7 +149,7 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
               </select>
             </div>
             <div className="bi-config-row">
-              <label>Calculation</label>
+              <label>Y-axis</label>
               <select
                 value={config.measure?.op}
                 onChange={(e) => handleChange('measureOp', e.target.value)}
@@ -162,7 +162,7 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
               </select>
             </div>
             <div className="bi-config-row">
-              <label>Measure Field</label>
+              <label>Legend</label>
               <select
                 value={config.measure?.field}
                 onChange={(e) => handleChange('measureField', e.target.value)}
@@ -182,33 +182,35 @@ const ConfigPanel = ({ config, fields, layouts, onUpdate, onRemove, onLayoutSize
           </>
         )}
 
-        <div className="bi-config-row">
-          <label>Columns to show</label>
-          {allFields.length > 0 && (
-            <label className="bi-config-select-all">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                ref={selectAllRef}
-                onChange={handleSelectDeselectAll}
-              />
-              <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
-            </label>
-          )}
-          <div className="bi-config-column-list">
-            {allFields.length === 0 && <span className="bi-config-hint">Load schema first</span>}
-            {allFields.map((f) => (
-              <label key={f.name} className="bi-config-column-item">
+        {isTable && (
+          <div className="bi-config-row">
+            <label>Columns to show</label>
+            {allFields.length > 0 && (
+              <label className="bi-config-select-all">
                 <input
                   type="checkbox"
-                  checked={selectedFields.includes(f.name)}
-                  onChange={() => toggleField(f.name)}
+                  checked={allSelected}
+                  ref={selectAllRef}
+                  onChange={handleSelectDeselectAll}
                 />
-                <span>{f.name}</span>
+                <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
               </label>
-            ))}
+            )}
+            <div className="bi-config-column-list">
+              {allFields.length === 0 && <span className="bi-config-hint">Load schema first</span>}
+              {allFields.map((f) => (
+                <label key={f.name} className="bi-config-column-item">
+                  <input
+                    type="checkbox"
+                    checked={selectedFields.includes(f.name)}
+                    onChange={() => toggleField(f.name)}
+                  />
+                  <span>{f.name}</span>
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="bi-config-row">
           <label>Limit {isTable ? '(rows)' : '(results)'}</label>

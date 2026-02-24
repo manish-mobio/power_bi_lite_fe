@@ -222,6 +222,9 @@ const ChartCanvas = ({
   const contentRef = useRef(null);
   const rectsRef = useRef({});
   const contentBounds = useRef({ width: DEFAULT_CANVAS_MIN.width, height: DEFAULT_CANVAS_MIN.height });
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
 
   const getInitialRect = useCallback((config, idx) => {
     const saved = savedLayouts?.rects?.[config.id];
@@ -289,6 +292,43 @@ const ChartCanvas = ({
     updateContentSize();
   }, [chartIds, getInitialRect, updateContentSize]);
 
+  // Power BI–style: zoom only with Ctrl+Wheel (or Cmd+Wheel). Plain scroll = pan (no zoom).
+  const handleWheel = useCallback((e) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const isInsidePlayground = el === e.target || el.contains(e.target);
+    if (!isInsidePlayground) return;
+
+    const isZoomIntent = e.ctrlKey || e.metaKey;
+    if (!isZoomIntent) {
+      // Let the container scroll normally (pan left/right/up/down)
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    const currentZoom = zoomRef.current;
+    const rect = el.getBoundingClientRect();
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
+    const contentX = (el.scrollLeft + cursorX) / currentZoom;
+    const contentY = (el.scrollTop + cursorY) / currentZoom;
+    const factor = 1 - e.deltaY * 0.002;
+    const newZoom = Math.max(0.25, Math.min(2, currentZoom * factor));
+    setZoom(newZoom);
+    requestAnimationFrame(() => {
+      if (scrollContainerRef.current) {
+        const c = scrollContainerRef.current;
+        c.scrollLeft = contentX * newZoom - cursorX;
+        c.scrollTop = contentY * newZoom - cursorY;
+      }
+    });
+  }, []);
+
+  const handleZoomIn = useCallback(() => setZoom((prev) => Math.min(2, prev + 0.15)), []);
+  const handleZoomOut = useCallback(() => setZoom((prev) => Math.max(0.25, prev - 0.15)), []);
+  const handleZoomReset = useCallback(() => setZoom(1), []);
+
   // Keyboard delete
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -325,7 +365,6 @@ const ChartCanvas = ({
 
   return (
     <div
-      ref={scrollContainerRef}
       className="bi-chart-canvas bi-playground"
       style={{
         position: 'relative',
@@ -333,42 +372,129 @@ const ChartCanvas = ({
         height: '100%',
         flex: 1,
         minHeight: 0,
-        overflow: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
         background: '#f1f5f9',
-        WebkitOverflowScrolling: 'touch',
-      }}
-      onMouseDown={(e) => {
-        if (e.target === scrollContainerRef.current || e.target === contentRef.current) {
-          onSelect?.(null);
-        }
       }}
     >
+      {/* Scrollable area: only this part scrolls */}
       <div
-        ref={contentRef}
-        className="bi-playground-content"
+        ref={scrollContainerRef}
         style={{
-          position: 'relative',
-          width: contentSize.width,
-          height: contentSize.height,
-          minWidth: contentSize.width,
-          minHeight: contentSize.height,
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}
+        onMouseDown={(e) => {
+          if (e.target === scrollContainerRef.current || e.target === contentRef.current) {
+            onSelect?.(null);
+          }
+        }}
+        onWheel={handleWheel}
+      >
+        <div
+          ref={contentRef}
+          className="bi-playground-content"
+          style={{
+            position: 'relative',
+            width: contentSize.width,
+            height: contentSize.height,
+            minWidth: contentSize.width,
+            minHeight: contentSize.height,
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top left',
+          }}
+        >
+          {charts.map((config, idx) => (
+            <ChartItem
+              key={config.id}
+              config={config}
+              isSelected={selectedChartId === config.id}
+              onSelect={onSelect}
+              onRefresh={onRefresh}
+              onRemove={onRemove}
+              onDuplicate={onDuplicate}
+              onUpdate={onChartUpdate ? (updates) => onChartUpdate(config.id, updates) : undefined}
+              initialRect={getInitialRect(config, idx)}
+              onRectChange={handleRectChange}
+              contentBounds={contentBounds}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Zoom controls - sticky at bottom right; outside scroll so they never move */}
+      <div
+        className="bi-zoom-controls"
+        style={{
+          position: 'absolute',
+          bottom: 25,
+          right: 25,
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '6px 8px',
+          background: 'white',
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          pointerEvents: 'auto',
         }}
       >
-        {charts.map((config, idx) => (
-          <ChartItem
-            key={config.id}
-            config={config}
-            isSelected={selectedChartId === config.id}
-            onSelect={onSelect}
-            onRefresh={onRefresh}
-            onRemove={onRemove}
-            onDuplicate={onDuplicate}
-            onUpdate={onChartUpdate ? (updates) => onChartUpdate(config.id, updates) : undefined}
-            initialRect={getInitialRect(config, idx)}
-            onRectChange={handleRectChange}
-            contentBounds={contentBounds}
-          />
-        ))}
+        <button
+          type="button"
+          onClick={handleZoomOut}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 4,
+            background: '#fff',
+            cursor: 'pointer',
+            fontSize: 16,
+            fontWeight: 600,
+            lineHeight: 1,
+          }}
+          title="Zoom out (Ctrl+Scroll)"
+        >
+          −
+        </button>
+        <span style={{ minWidth: 48, textAlign: 'center', fontSize: 12, fontWeight: 500, color: '#555' }}>
+          {Math.round(zoom * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={handleZoomIn}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 4,
+            background: '#fff',
+            cursor: 'pointer',
+            fontSize: 16,
+            fontWeight: 600,
+            lineHeight: 1,
+          }}
+          title="Zoom in (Ctrl+Scroll)"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          onClick={handleZoomReset}
+          style={{
+            padding: '6px 10px',
+            border: '1px solid #ddd',
+            borderRadius: 4,
+            background: '#f5f5f5',
+            cursor: 'pointer',
+            fontSize: 11,
+            fontWeight: 500,
+          }}
+          title="Reset zoom"
+        >
+          Reset
+        </button>
       </div>
     </div>
   );

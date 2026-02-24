@@ -2,7 +2,7 @@
  * Power BI Lite - Dashboard Toolbar
  * Clean, professional menu bar with icons + tooltips (dashboard-style UI)
  */
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import {
   AiOutlineCloudUpload,
@@ -99,7 +99,57 @@ const DashboardToolbar = ({
   fileInputRef,
   recordCount,
 }) => {
-    console.log('recordCount log by manish::', recordCount);
+  const [collections, setCollections] = useState([]);
+  const [loadingCollections, setLoadingCollections] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Fetch collections list on mount
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCollections(true);
+    
+    fetch('/api/bi/collections')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) {
+          setCollections(Array.isArray(data) ? data : []);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch collections:', err);
+        if (!cancelled) {
+          setCollections([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingCollections(false);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+    };
+    if (dropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [dropdownOpen]);
+
+  const handleSelectCollection = (collectionName) => {
+    onCollectionChange(collectionName);
+    setDropdownOpen(false);
+  };
+
+  console.log('recordCount log by manish::', recordCount);
     
   return (
     <header className={`${styles.toolbar} bi-dashboard-toolbar`} role="banner">
@@ -109,18 +159,28 @@ const DashboardToolbar = ({
           <label htmlFor="bi-toolbar-collection" className={styles.collectionLabel}>
             Collection
           </label>
-          <input
-            id="bi-toolbar-collection"
-            type="text"
-            className={styles.collectionInput}
-            value={collectionInput}
-            onChange={(e) => onCollectionChange(e.target.value)}
-            placeholder="e.g. users"
-            aria-label="Collection name"
-          />
-          {recordCount !== null && recordCount !== undefined && (
+          <div className={styles.collectionDropdownWrap} ref={dropdownRef}>
+            <select
+              id="bi-toolbar-collection"
+              className={styles.collectionSelect}
+              value={collectionInput || ''}
+              onChange={(e) => onCollectionChange(e.target.value)}
+              aria-label="Collection name"
+            >
+              <option value="">Select a collection</option>
+              {collections.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            {loadingCollections && (
+              <span className={styles.collectionLoading}>Loading...</span>
+            )}
+          </div>
+          {(recordCount !== null && recordCount !== undefined) && (
             <span className={styles.recordCount}>
-              ({typeof recordCount === 'number' ? recordCount.toLocaleString() : recordCount} records)
+              ({typeof recordCount === 'number' ? recordCount.toLocaleString() : String(recordCount)} records)
             </span>
           )}
         </div>
