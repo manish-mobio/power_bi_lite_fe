@@ -6,6 +6,33 @@ import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import PropTypes from 'prop-types';
 import ReactECharts from 'echarts-for-react';
 
+const COLOR_THEMES = {
+  default: {
+    name: 'Default',
+    colors: ['#3b82f6', '#10b981', '#f97316', '#ef4444', '#8b5cf6', '#06b6d4'],
+    backgroundColor: '#f9fafb',
+    axisLabelColor: '#374151',
+  },
+  pastel: {
+    name: 'Pastel',
+    colors: ['#60a5fa', '#a5b4fc', '#f9a8d4', '#facc15', '#34d399', '#fb923c'],
+    backgroundColor: '#fdf2f8',
+    axisLabelColor: '#4b5563',
+  },
+  dark: {
+    name: 'Dark',
+    colors: ['#f97316', '#22c55e', '#38bdf8', '#e5e7eb', '#a855f7', '#facc15'],
+    backgroundColor: '#020617',
+    axisLabelColor: '#e5e7eb',
+  },
+  ocean: {
+    name: 'Ocean',
+    colors: ['#0ea5e9', '#22c55e', '#6366f1', '#14b8a6', '#38bdf8', '#1d4ed8'],
+    backgroundColor: '#0f172a',
+    axisLabelColor: '#e0f2fe',
+  },
+};
+
 const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, globalFilter }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23,7 +50,21 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
     setLoading(true);
     setError(null);
 
-    const body = { ...config, filter: globalFilter || undefined };
+    const body = {
+      id: config.id,
+      collection: config.collection,
+      type: config.type,
+      dimension: config.dimension,
+      legendField: config.legendField,
+      measure: config.measure,
+      measureFields: config.measureFields,
+      metrics: config.metrics,
+      limit: config.limit,
+      selectedFields: config.selectedFields,
+      sortBy: config.sortBy,
+      sortOrder: config.sortOrder,
+      filter: globalFilter || undefined,
+    };
     fetch('/api/bi/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -52,11 +93,26 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       });
 
     return () => { cancelled = true; };
-  }, [config, globalFilter]);
+  }, [
+    config?.id,
+    config?.collection,
+    config?.type,
+    config?.dimension,
+    config?.legendField,
+    config?.measure?.field,
+    config?.measure?.op,
+    config?.measureFields,
+    config?.metrics,
+    config?.limit,
+    config?.selectedFields,
+    config?.sortBy,
+    config?.sortOrder,
+    globalFilter,
+  ]);
 
   useEffect(() => {
     fetchData();
-  }, [config?.id, config?.collection, config?.dimension, config?.measure?.field, config?.measure?.op, config?.limit, config?.type, config?.selectedFields, config?.sortBy, config?.sortOrder, globalFilter, fetchData]);
+  }, [fetchData]);
 
   // Auto-refresh every 30s so chart reflects current DB data
   useEffect(() => {
@@ -78,6 +134,19 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [showMenu]);
+
+  // Close this chart's menu when another chart's menu opens
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handler = (e) => {
+      const openedId = e.detail?.id;
+      if (openedId && openedId !== config.id) {
+        setShowMenu(false);
+      }
+    };
+    window.addEventListener('bi-chart-menu-open', handler);
+    return () => window.removeEventListener('bi-chart-menu-open', handler);
+  }, [config.id]);
 
   // Table type: data is array of row objects
   const isTable = config.type === 'table';
@@ -116,14 +185,43 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
     if (isTable || isCard) return null;
     if (!data || data.length === 0) return null;
 
-    const names = data.map((d) => d.name);
-    const values = data.map((d) => d.value);
+    const theme = COLOR_THEMES[config.themeKey] || COLOR_THEMES.default;
+
+    const names = Array.from(new Set(data.map((d) => d.name)));
+    const hasLegendField = !!config.legendField && data.some((d) => d.legend !== undefined);
+
+    // Detect multi-measure series when API returns multiple numeric keys per row.
+    const measureFieldKeys = Array.isArray(config.measureFields) && config.measureFields.length
+      ? config.measureFields
+      : Object.keys(data[0] || {}).filter((k) => k !== 'name' && typeof data[0][k] === 'number');
+
+    const hasMultipleSeries = measureFieldKeys.length > 1;
+
+    const singleSeriesValues = !hasLegendField && !hasMultipleSeries
+      ? data.map((d) => {
+          if (typeof d.value === 'number') return d.value;
+          const firstKey = measureFieldKeys[0];
+          return typeof firstKey === 'string' && typeof d[firstKey] === 'number' ? d[firstKey] : 0;
+        })
+      : null;
 
     // Shared X-axis label config: show all labels, rotate when many/long, prevent truncation
     const hasManyCategories = names.length > 6;
     const isIdOrLongLabels = config.dimension === '_id' || names.some((n) => n && String(n).length > 10);
     const needRotate = hasManyCategories || isIdOrLongLabels;
     const gridBottom = config.dimension === '_id' ? '22%' : needRotate ? '18%' : '3%';
+
+    const axisFontKey = config.axisLabelFontStyle || 'regular';
+    const axisFontMap = {
+      regular: { fontStyle: 'normal', fontWeight: '400' },
+      bold: { fontStyle: 'normal', fontWeight: '600' },
+      italic: { fontStyle: 'italic', fontWeight: '400' },
+      boldItalic: { fontStyle: 'italic', fontWeight: '600' },
+    };
+    const axisFont = axisFontMap[axisFontKey] || axisFontMap.regular;
+
+    const xAxisLabelColor = config.xAxisLabelColor || theme.axisLabelColor;
+    const yAxisLabelColor = config.yAxisLabelColor || theme.axisLabelColor;
     const categoryXAxis = {
       type: 'category',
       data: names,
@@ -138,17 +236,31 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
           if (str.length > 14) return str.substring(0, 14) + '…';
           return str;
         },
-        textStyle: { fontSize: needRotate ? 11 : 12 },
+        textStyle: {
+          fontSize: needRotate ? 11 : 12,
+          color: xAxisLabelColor,
+          fontStyle: axisFont.fontStyle,
+          fontWeight: axisFont.fontWeight,
+        },
       },
     };
 
     const baseOption = {
+      backgroundColor: theme.backgroundColor,
+      color: theme.colors,
       tooltip: { trigger: config.type === 'pie' || config.type === 'donut' ? 'item' : 'axis' },
       grid: { left: '3%', right: '4%', bottom: gridBottom, top: '10%', containLabel: true },
     };
 
     switch (config.type) {
       case 'pie':
+        // For pie/donut we expect each data row to have either:
+        // - a generic `value` field (legacy behaviour), or
+        // - a single numeric measure field (from aggregation pipeline).
+        // We normalise both into `{ name, value }` here.
+        const pieValueKey =
+          measureFieldKeys.length === 1 ? measureFieldKeys[0] : null;
+
         return {
           ...baseOption,
           series: [
@@ -161,13 +273,27 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
                 borderColor: '#fff',
                 borderWidth: 2,
               },
-              label: { show: true },
-              data: data.map((d) => ({ name: d.name, value: d.value })),
+              label: {
+                show: true,
+                formatter: '{b}: {c}',
+              },
+              data: data.map((d) => ({
+                name: d.name,
+                value:
+                  typeof d.value === 'number'
+                    ? d.value
+                    : (pieValueKey && typeof d[pieValueKey] === 'number'
+                        ? d[pieValueKey]
+                        : 0),
+              })),
             },
           ],
         };
 
       case 'donut':
+        const donutValueKey =
+          measureFieldKeys.length === 1 ? measureFieldKeys[0] : null;
+
         return {
           ...baseOption,
           series: [
@@ -180,8 +306,19 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
                 borderColor: '#fff',
                 borderWidth: 2,
               },
-              label: { show: true },
-              data: data.map((d) => ({ name: d.name, value: d.value })),
+              label: {
+                show: true,
+                formatter: '{b}: {c}',
+              },
+              data: data.map((d) => ({
+                name: d.name,
+                value:
+                  typeof d.value === 'number'
+                    ? d.value
+                    : (donutValueKey && typeof d[donutValueKey] === 'number'
+                        ? d[donutValueKey]
+                        : 0),
+              })),
             },
           ],
         };
@@ -190,23 +327,89 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
         return {
           ...baseOption,
           xAxis: { ...categoryXAxis, boundaryGap: false },
-          yAxis: { type: 'value' },
-          series: [{ type: 'line', data: values, smooth: true }],
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              color: yAxisLabelColor,
+              fontStyle: axisFont.fontStyle,
+              fontWeight: axisFont.fontWeight,
+            },
+          },
+          series: hasMultipleSeries
+            ? measureFieldKeys.map((field) => ({
+                name: field,
+                type: 'line',
+                smooth: true,
+                data: data.map((d) => (typeof d[field] === 'number' ? d[field] : 0)),
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }))
+            : [{
+                type: 'line',
+                data: singleSeriesValues,
+                smooth: true,
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }],
         };
 
       case 'area':
         return {
           ...baseOption,
           xAxis: { ...categoryXAxis, boundaryGap: false },
-          yAxis: { type: 'value' },
-          series: [{ type: 'line', data: values, smooth: true, areaStyle: {} }],
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              color: yAxisLabelColor,
+              fontStyle: axisFont.fontStyle,
+              fontWeight: axisFont.fontWeight,
+            },
+          },
+          series: hasMultipleSeries
+            ? measureFieldKeys.map((field) => ({
+                name: field,
+                type: 'line',
+                smooth: true,
+                areaStyle: {},
+                data: data.map((d) => (typeof d[field] === 'number' ? d[field] : 0)),
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }))
+            : [{
+                type: 'line',
+                data: singleSeriesValues,
+                smooth: true,
+                areaStyle: {},
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }],
         };
 
       case 'stackedBar':
-        // Stacked bar: horizontal bars (category on Y-axis, value on X) — visually distinct from vertical bar
+        // Stacked bar: horizontal bars (category on Y-axis, value on X)
         return {
           ...baseOption,
-          grid: { left: '15%', right: '4%', bottom: '8%', top: '10%', containLabel: true },
+          grid: { left: '15%', right: '4%', bottom: '8%', top: 36, containLabel: true },
           xAxis: { type: 'value' },
           yAxis: {
             type: 'category',
@@ -219,47 +422,246 @@ const SmartChart = ({ config, isSelected, onSelect, onRefresh, onRemove, onDupli
                 if (str.length > 14) return str.substring(0, 14) + '…';
                 return str;
               },
-              textStyle: { fontSize: 12 },
+              textStyle: {
+                fontSize: 12,
+                color: yAxisLabelColor,
+                fontStyle: axisFont.fontStyle,
+                fontWeight: axisFont.fontWeight,
+              },
             },
           },
-          series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [0, 4, 4, 0] } }],
+          series: hasMultipleSeries
+            ? measureFieldKeys.map((field) => ({
+                name: field,
+                type: 'bar',
+                stack: 'total',
+                data: data.map((d) => (typeof d[field] === 'number' ? d[field] : 0)),
+                itemStyle: { borderRadius: [0, 4, 4, 0] },
+                labelLayout: { hideOverlap: true },
+                label: {
+                  show: true,
+                  position: 'right',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }))
+            : [{
+                type: 'bar',
+                data: singleSeriesValues,
+                itemStyle: { borderRadius: [0, 4, 4, 0] },
+                labelLayout: { hideOverlap: true },
+                label: {
+                  show: true,
+                  position: 'right',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }],
         };
 
       case 'scatter':
         return {
           ...baseOption,
           xAxis: categoryXAxis,
-          yAxis: { type: 'value' },
-          series: [{ type: 'scatter', data: values.map((v, i) => [i, v]), symbolSize: 10 }],
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              color: yAxisLabelColor,
+              fontStyle: axisFont.fontStyle,
+              fontWeight: axisFont.fontWeight,
+            },
+          },
+          series: hasMultipleSeries
+            ? measureFieldKeys.map((field) => ({
+                name: field,
+                type: 'scatter',
+                data: data.map((d, i) => [
+                  i,
+                  typeof d[field] === 'number' ? d[field] : 0,
+                ]),
+                symbolSize: 10,
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }))
+            : [{
+                type: 'scatter',
+                data: (singleSeriesValues || []).map((v, i) => [i, v]),
+                symbolSize: 10,
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }],
         };
 
-      case 'bar':
+      case 'bar': {
+        const metricKeys =
+          measureFieldKeys.length > 0
+            ? measureFieldKeys
+            : singleSeriesValues
+              ? ['__single__']
+              : [];
+
+        const getValue = (row, fieldKey) => {
+          if (!row) return 0;
+          if (fieldKey === '__single__') {
+            if (typeof row.value === 'number') return row.value;
+            const firstKey = measureFieldKeys[0];
+            if (firstKey && typeof row[firstKey] === 'number') return row[firstKey];
+            return 0;
+          }
+          if (fieldKey && typeof row[fieldKey] === 'number') return row[fieldKey];
+          if (typeof row.value === 'number') return row.value;
+          return 0;
+        };
+
+        if (hasLegendField && metricKeys.length) {
+          const legendValues = Array.from(new Set(data.map((d) => d.legend)));
+          const series = [];
+
+          metricKeys.forEach((fieldKey) => {
+            legendValues.forEach((legendVal) => {
+              const seriesName =
+                fieldKey === '__single__'
+                  ? String(legendVal ?? '')
+                  : `${fieldKey} • ${legendVal ?? ''}`;
+
+              const seriesData = names.map((cat) => {
+                const row = data.find(
+                  (d) => d.name === cat && d.legend === legendVal
+                );
+                return getValue(row, fieldKey);
+              });
+
+              series.push({
+                name: seriesName,
+                type: 'bar',
+                data: seriesData,
+                itemStyle: { borderRadius: [4, 4, 0, 0] },
+                labelLayout: { hideOverlap: true },
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              });
+            });
+          });
+
+          return {
+            ...baseOption,
+            xAxis: categoryXAxis,
+            yAxis: {
+              type: 'value',
+              axisLabel: {
+                color: yAxisLabelColor,
+                fontStyle: axisFont.fontStyle,
+                fontWeight: axisFont.fontWeight,
+              },
+            },
+            series,
+          };
+        }
+
+        // No legend field: original multi-metric behaviour
         return {
           ...baseOption,
           xAxis: categoryXAxis,
-          yAxis: { type: 'value' },
-          series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              color: yAxisLabelColor,
+              fontStyle: axisFont.fontStyle,
+              fontWeight: axisFont.fontWeight,
+            },
+          },
+          series: hasMultipleSeries
+            ? measureFieldKeys.map((field) => ({
+                name: field,
+                type: 'bar',
+                data: data.map((d) => (typeof d[field] === 'number' ? d[field] : 0)),
+                itemStyle: { borderRadius: [4, 4, 0, 0] },
+                labelLayout: { hideOverlap: true },
+                label: {
+                  show: true,
+                  position: 'top',
+                  formatter: '{c}',
+                  color: '#111827',
+                  fontSize: 11,
+                },
+              }))
+            : [
+                {
+                  type: 'bar',
+                  data: singleSeriesValues,
+                  itemStyle: { borderRadius: [4, 4, 0, 0] },
+                  labelLayout: { hideOverlap: true },
+                  label: {
+                    show: true,
+                    position: 'top',
+                    formatter: '{c}',
+                    color: '#111827',
+                    fontSize: 11,
+                  },
+                },
+              ],
         };
+      }
 
       default:
         return {
           ...baseOption,
           xAxis: categoryXAxis,
           yAxis: { type: 'value' },
-          series: [{ type: 'bar', data: values, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
+          series: hasMultipleSeries
+            ? measureFieldKeys.map((field) => ({
+                name: field,
+                type: 'bar',
+                data: data.map((d) => (typeof d[field] === 'number' ? d[field] : 0)),
+                itemStyle: { borderRadius: [4, 4, 0, 0] },
+              }))
+            : [{ type: 'bar', data: singleSeriesValues, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
         };
     }
-  }, [data, config?.type, config?.dimension, isTable]);
+  }, [
+    data,
+    isTable,
+    config?.type,
+    config?.dimension,
+    config?.measureFields,
+    config?.legendField,
+    config?.themeKey,
+    config?.xAxisLabelColor,
+    config?.yAxisLabelColor,
+    config?.axisLabelFontStyle,
+  ]);
 
   const handleClick = (e) => {
-    // Don't select if clicking on menu
+    // Don't select if clicking on menu button or dropdown
     if (e.target.closest('.bi-chart-menu')) return;
     if (onSelect) onSelect(config.id);
   };
 
   const handleMenuToggle = (e) => {
     e.stopPropagation();
-    setShowMenu(!showMenu);
+    const next = !showMenu;
+    setShowMenu(next);
+    if (next && typeof window !== 'undefined') {
+      // Notify other charts to close their menus
+      window.dispatchEvent(new CustomEvent('bi-chart-menu-open', { detail: { id: config.id } }));
+    }
   };
 
   const handleRefreshClick = (e) => {
@@ -441,6 +843,7 @@ SmartChart.propTypes = {
       field: PropTypes.string,
       op: PropTypes.string,
     }),
+    measureFields: PropTypes.arrayOf(PropTypes.string),
     limit: PropTypes.number,
     title: PropTypes.string,
     selectedFields: PropTypes.array,

@@ -2,9 +2,10 @@
  * Power BI Lite - View Data Modal
  * Shows selected/uploaded collection data in table format
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { AiOutlineClose } from 'react-icons/ai';
+import { MaterialReactTable } from 'material-react-table';
 import styles from './ViewDataModal.module.css';
 
 const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataFilter }) => {
@@ -58,10 +59,19 @@ const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataF
       });
     return () => { cancelled = true; };
   }, [isOpen, collection, fields, recordCount, dataFilter]);
+  const columnKeys = data.length > 0 ? Object.keys(data[0]) : (fields || []).map((f) => f.name);
+  const mrtColumns = useMemo(
+    () =>
+      columnKeys.map((key) => ({
+        accessorKey: key,
+        header: key,
+      })),
+    [columnKeys]
+  );
 
   if (!isOpen) return null;
 
-  const columns = data.length > 0 ? Object.keys(data[0]) : (fields || []).map((f) => f.name);
+
 
   return (
     <div className={styles.overlay} onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="view-data-title">
@@ -80,24 +90,20 @@ const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataF
           )}
           {!loading && !error && data.length > 0 && (
             <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    {columns.map((col) => (
-                      <th key={col}>{col}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.map((row, idx) => (
-                    <tr key={idx}>
-                      {columns.map((col) => (
-                        <td key={col}>{row[col] != null ? String(row[col]) : '—'}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <MaterialReactTable
+                columns={mrtColumns}
+                data={data}
+                enableColumnFilters
+                enableSorting
+                enableGlobalFilter
+                enablePagination
+                initialState={{
+                  pagination: { pageIndex: 0, pageSize: 50 }, // 👈 default 50 rows
+                }}
+                enableStickyHeader
+                enableRowVirtualization
+                muiTableBodyProps={{ sx: { fontSize: 12 } }}
+              />
             </div>
           )}
         </div>

@@ -15,6 +15,8 @@ import {
   AiOutlineTable,
   AiOutlinePicture,
   AiOutlineFilter,
+  AiOutlineExpand,
+  AiOutlineCompress,
 } from 'react-icons/ai';
 import styles from './DashboardToolbar.module.css';
 
@@ -112,6 +114,8 @@ const DashboardToolbar = ({
   dataFilter,
   onDataFilterChange,
   dateFields = [],
+  isPlaygroundMaximized,
+  onTogglePlaygroundMaximize,
 }) => {
   const [collections, setCollections] = useState([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
@@ -435,6 +439,18 @@ const DashboardToolbar = ({
           </div>
         )}
 
+        {/* {onTogglePlaygroundMaximize && (
+          <div className={styles.toolbarGroup}>
+            <ToolbarButton
+              icon={isPlaygroundMaximized ? AiOutlineCompress : AiOutlineExpand}
+              label={isPlaygroundMaximized ? 'Minimize' : 'Maximize'}
+              onClick={onTogglePlaygroundMaximize}
+              title={isPlaygroundMaximized ? 'Exit full-screen canvas' : 'Maximize chart canvas area'}
+              aria-label={isPlaygroundMaximized ? 'Minimize playground' : 'Maximize playground'}
+            />
+          </div>
+        )} */}
+
         <div className={styles.toolbarGroup}>
           <ToolbarButton icon={AiOutlinePrinter} label="Print" onClick={onPrint} />
         </div>
@@ -542,6 +558,8 @@ DashboardToolbar.propTypes = {
   }),
   onDataFilterChange: PropTypes.func,
   dateFields: PropTypes.arrayOf(PropTypes.shape({ name: PropTypes.string, type: PropTypes.string })),
+  isPlaygroundMaximized: PropTypes.bool,
+  onTogglePlaygroundMaximize: PropTypes.func,
 };
 
 export default DashboardToolbar;

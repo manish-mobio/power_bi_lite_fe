@@ -147,7 +147,7 @@
 
 .biSidebarLeft {
   width: 260px;
-  min-width: 260px;
+  min-width: 200px;
   border-right: 1px solid var(--color-border);
   background: #fafbfc;
   overflow-y: auto;
@@ -165,9 +165,81 @@
 
 .biSidebarRight {
   width: 280px;
-  min-width: 280px;
+  min-width: 200px;
   border-left: 1px solid var(--color-border);
   background: #fafbfc;
   overflow-y: auto;
+}
+
+.biSidebarResizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  position: relative;
+  background: transparent;
+}
+
+.biSidebarResizer::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(to bottom, #e5e7eb, #cbd5e1);
+  opacity: 0.8;
+}
+
+.biSidebarResizer:hover::before {
+  background: linear-gradient(to bottom, #bfdbfe, #60a5fa);
+}
+
+/* Maximized playground mode: hide chrome, focus on canvas */
+.playgroundMaximized .biMainHeader {
+  display: none;
+}
+
+.playgroundMaximized :global(.bi-dashboard-toolbar) {
+  display: none;
+}
+
+.playgroundMaximized .biMain {
+  height: 100vh;
+}
+
+.playgroundMaximized .biSidebarLeft,
+.playgroundMaximized .biSidebarRight {
+  display: none;
+}
+
+.playgroundMaximized .biCanvas {
+  padding: 0;
+}
+
+.playgroundMaximized .biSidebarResizer {
+  display: none;
+}
+
+.playgroundToggleButton {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.8);
+  background: rgba(15, 23, 42, 0.9);
+  color: #e5e7eb;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.4);
+  z-index: 500;
+}
+
+.playgroundToggleButton:hover {
+  background: rgba(15, 23, 42, 1);
 }
 

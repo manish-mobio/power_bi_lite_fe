@@ -41,6 +41,49 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
   const hasAxis = ['bar', 'line', 'area', 'stackedBar', 'scatter'].includes(config.type);
   const selectedFields = config.selectedFields || [];
 
+  // Normalise Y-axis metrics (field + aggregation) for axis charts.
+  // This keeps a clear separation between:
+  // - X-axis (dimension)
+  // - Y-axis metrics (each with its own aggregation op)
+  // - Legend (comes from metric field names)
+  const normalizedMetrics = (() => {
+    // Preferred: explicit metrics array [{ field, op }]
+    if (Array.isArray(config.metrics) && config.metrics.length) {
+      return config.metrics
+        .filter((m) => m && m.field)
+        .map((m) => ({
+          field: m.field,
+          op: (m.op || config.measure?.op || 'COUNT').toUpperCase(),
+        }));
+    }
+
+    // Legacy: single measure + optional measureFields
+    const baseOp = (config.measure?.op || 'COUNT').toUpperCase();
+    if (Array.isArray(config.measureFields) && config.measureFields.length) {
+      return config.measureFields
+        .filter(Boolean)
+        .map((field) => ({ field, op: baseOp }));
+    }
+    if (config.measure?.field) {
+      return [{ field: config.measure.field, op: baseOp }];
+    }
+    return [];
+  })();
+
+  const updateMetrics = (nextMetrics) => {
+    const cleaned = nextMetrics.filter((m) => m && m.field);
+    const primary = cleaned[0] || null;
+
+    onUpdate?.({
+      metrics: cleaned,
+      // Keep legacy fields in sync for existing API and chart code
+      measureFields: cleaned.map((m) => m.field),
+      measure: primary
+        ? { ...(config.measure || {}), field: primary.field, op: primary.op || 'COUNT' }
+        : { field: '', op: config.measure?.op || 'COUNT' },
+    });
+  };
+
   const handleChange = (key, value) => {
     if (key === 'dimension') {
       onUpdate({ dimension: value });
@@ -153,15 +196,178 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
           </select> */}
         </div>
 
-        {/* Axis charts: X-axis, Y-axis, Legend (Power BI style) */}
+        <div className="bi-config-row">
+          <label>Color theme</label>
+          <select
+            value={config.themeKey || 'default'}
+            onChange={(e) => onUpdate?.({ themeKey: e.target.value })}
+          >
+            <option value="default">Default</option>
+            <option value="pastel">Pastel</option>
+            <option value="dark">Dark</option>
+            <option value="ocean">Ocean</option>
+          </select>
+        </div>
+
+        {/* Axis charts: X-axis + Y-axis metrics (each with its own aggregation, Power BI style) */}
         {hasAxis && (
           <>
             <div className="bi-config-row">
               <label>X-axis</label>
-              <select
-                value={config.dimension}
-                onChange={(e) => handleChange('dimension', e.target.value)}
+              {/* <Select
+                mode="tags"
+                allowClear
+                placeholder="Select X-axis field(s)"
+                value={config.dimensions && Array.isArray(config.dimensions) && config.dimensions.length
+                  ? config.dimensions
+                  : (config.dimension ? [config.dimension] : [])}
+                onChange={(vals) => {
+                  const arr = Array.isArray(vals) ? vals : [];
+                  onUpdate?.({
+                    dimensions: arr,
+                    dimension: arr[0] || '',
+                  });
+                }}
+                style={{ width: '100%' }}
+              > */}
+              <Select
+                allowClear
+                placeholder="Select X-axis field"
+                value={config.dimension || undefined}
+                onChange={(val) => {
+                  onUpdate?.({
+                    dimension: val || '',
+                    dimensions: val ? [val] : [], // keep backward compatibility
+                  });
+                }}
+                style={{ width: '100%' }}
               >
+                {stringFields.map((f) => (
+                  <Option key={f.name} value={f.name}>
+                    {f.name}
+                  </Option>
+                ))}
+              </Select>
+            </div>
+            <div className="bi-config-row">
+              <label>Y-axis metrics</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {normalizedMetrics.map((m, idx) => (
+                  <div
+                    key={`${m.field}-${idx}`}
+                    style={{
+                      display: 'flex',
+                      gap: 8,
+                      alignItems: 'center',
+                    }}
+                  >
+                    {/* Aggregation operation for this Y-axis */}
+                    <select
+                      value={m.op}
+                      onChange={(e) => {
+                        const next = [...normalizedMetrics];
+                        next[idx] = { ...next[idx], op: e.target.value };
+                        updateMetrics(next);
+                      }}
+                      style={{ minWidth: 100 }}
+                    >
+                      {AGG_OPS.map((op) => (
+                        <option key={op} value={op}>
+                          {op}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Y-axis field (metric) */}
+                    <Select
+                      value={m.field}
+                      onChange={(val) => {
+                        const next = [...normalizedMetrics];
+                        next[idx] = { ...next[idx], field: val };
+                        updateMetrics(next);
+                      }}
+                      style={{ flex: 1 }}
+                      placeholder="Select Y-axis field"
+                    >
+                      {numberFields.map((f) => (
+                        <Option key={f.name} value={f.name}>
+                          {f.name}
+                        </Option>
+                      ))}
+                      {stringFields.map((f) => (
+                        <Option key={f.name} value={f.name}>
+                          {f.name} (COUNT)
+                        </Option>
+                      ))}
+                    </Select>
+
+                    {/* Remove this Y-axis metric */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = normalizedMetrics.filter((_, i) => i !== idx);
+                        updateMetrics(next);
+                      }}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        color: '#ef4444',
+                        fontSize: 16,
+                        padding: '0 4px',
+                      }}
+                      title="Remove Y-axis metric"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+
+                {/* Add new Y-axis metric */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstNumeric = numberFields[0]?.name;
+                    const firstString = stringFields[0]?.name;
+                    const fallbackField =
+                      firstNumeric ||
+                      firstString ||
+                      normalizedMetrics[0]?.field ||
+                      config.measure?.field ||
+                      '';
+
+                    if (!fallbackField) return;
+
+                    updateMetrics([
+                      ...normalizedMetrics,
+                      { field: fallbackField, op: (config.measure?.op || 'COUNT').toUpperCase() },
+                    ]);
+                  }}
+                  style={{
+                    marginTop: 4,
+                    alignSelf: 'flex-start',
+                    borderRadius: 4,
+                    border: '1px dashed #cbd5e1',
+                    padding: '4px 8px',
+                    background: '#f9fafb',
+                    fontSize: 12,
+                    cursor: 'pointer',
+                  }}
+                >
+                  + Add Y-axis
+                </button>
+              </div>
+            </div>
+
+            <div className="bi-config-row">
+              <label>Legend field</label>
+              <select
+                value={config.legendField || ''}
+                onChange={(e) =>
+                  onUpdate?.({ legendField: e.target.value || undefined })
+                }
+              >
+                <option value="">— None —</option>
                 {stringFields.map((f) => (
                   <option key={f.name} value={f.name}>
                     {f.name}
@@ -169,35 +375,35 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 ))}
               </select>
             </div>
+
             <div className="bi-config-row">
-              <label>Y-axis</label>
-              <select
-                value={config.measure?.op}
-                onChange={(e) => handleChange('measureOp', e.target.value)}
-              >
-                {AGG_OPS.map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
+              <label>X-axis label color</label>
+              <input
+                type="color"
+                value={config.xAxisLabelColor || '#374151'}
+                onChange={(e) => onUpdate?.({ xAxisLabelColor: e.target.value })}
+              />
             </div>
+
             <div className="bi-config-row">
-              <label>Legend</label>
+              <label>Y-axis label color</label>
+              <input
+                type="color"
+                value={config.yAxisLabelColor || '#374151'}
+                onChange={(e) => onUpdate?.({ yAxisLabelColor: e.target.value })}
+              />
+            </div>
+
+            <div className="bi-config-row">
+              <label>Axis font style</label>
               <select
-                value={config.measure?.field}
-                onChange={(e) => handleChange('measureField', e.target.value)}
+                value={config.axisLabelFontStyle || 'regular'}
+                onChange={(e) => onUpdate?.({ axisLabelFontStyle: e.target.value })}
               >
-                {numberFields.map((f) => (
-                  <option key={f.name} value={f.name}>
-                    {f.name}
-                  </option>
-                ))}
-                {stringFields.map((f) => (
-                  <option key={f.name} value={f.name}>
-                    {f.name} (for COUNT)
-                  </option>
-                ))}
+                <option value="regular">Regular</option>
+                <option value="bold">Bold</option>
+                <option value="italic">Italic</option>
+                <option value="boldItalic">Bold italic</option>
               </select>
             </div>
           </>

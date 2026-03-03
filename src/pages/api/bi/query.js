@@ -69,68 +69,133 @@ export default async function handler(req, res) {
 
 /**
  * Generate aggregation pipeline (MongoDB-style, run in memory)
+ * Supports:
+ * - metrics: [{ field, op }]  (per-field aggregation)
+ * - legacy: measure{field,op} + measureFields
  */
 function generatePipeline(config) {
-  const { dimension, measure, limit = 100 } = config;
+  const { dimension, legendField, measure, measureFields, metrics, limit = 100 } = config;
   const dimKey = dimension;
-  const measureField = measure.field;
-  const op = measure.op?.toUpperCase() || 'COUNT';
+  const legendKey = legendField || null;
+  const defaultOp = measure?.op?.toUpperCase() || 'COUNT';
 
-  return { dimKey, measureField, op, limit };
+  // Preferred: explicit metrics array
+  let metricDefs = Array.isArray(metrics) && metrics.length
+    ? metrics
+        .filter((m) => m && m.field)
+        .map((m) => ({
+          field: m.field,
+          op: (m.op || defaultOp || 'COUNT').toUpperCase(),
+        }))
+    : [];
+
+  // Backward compatibility: fall back to measureFields + single op
+  if (!metricDefs.length) {
+    let fields = Array.isArray(measureFields) && measureFields.length
+      ? measureFields.filter(Boolean)
+      : [];
+    if (!fields.length && measure?.field) {
+      fields = [measure.field];
+    }
+    metricDefs = fields.map((field) => ({ field, op: defaultOp || 'COUNT' }));
+  }
+
+  const fields = metricDefs.map((m) => m.field);
+  const opByField = {};
+  metricDefs.forEach((m) => {
+    opByField[m.field] = m.op;
+  });
+
+  return { dimKey, legendKey, measureFields: fields, opByField, limit };
 }
 
 /**
  * Run aggregation on in-memory data
  */
 function runAggregation(items, pipeline) {
-  const { dimKey, measureField, op, limit } = pipeline;
+  const { dimKey, legendKey, measureFields, opByField, limit } = pipeline;
 
   const groups = Object.create(null);
 
   for (const doc of items) {
-    const dimValue = getNestedValue(doc, dimKey);
-    const key = dimValue === null || dimValue === undefined ? '(empty)' : String(dimValue);
+    const dimRaw = getNestedValue(doc, dimKey);
+    const legendRaw = legendKey ? getNestedValue(doc, legendKey) : undefined;
+
+    const dimLabel = dimRaw === null || dimRaw === undefined ? '(empty)' : String(dimRaw);
+    const legendLabel = legendKey
+      ? (legendRaw === null || legendRaw === undefined ? '(empty)' : String(legendRaw))
+      : undefined;
+
+    const key = legendKey ? `${dimLabel}|||${legendLabel}` : dimLabel;
 
     if (!groups[key]) {
-      groups[key] = { values: [], count: 0 };
+      groups[key] = {
+        dimLabel,
+        legendLabel,
+        valuesByField: Object.create(null),
+        count: 0,
+      };
     }
 
     const group = groups[key];
     group.count += 1;
 
-    if (op !== 'COUNT' && measureField) {
-      const val = getNestedValue(doc, measureField);
-      if (typeof val === 'number' && !Number.isNaN(val)) {
-        group.values.push(val);
+    if (Array.isArray(measureFields) && measureFields.length) {
+      for (const field of measureFields) {
+        if (!field) continue;
+        if (!group.valuesByField[field]) group.valuesByField[field] = [];
+        const fieldOp = (opByField && opByField[field]) || 'COUNT';
+        // For COUNT we only need the group.count; for others we collect numeric values.
+        if (fieldOp !== 'COUNT') {
+          const val = getNestedValue(doc, field);
+          if (typeof val === 'number' && !Number.isNaN(val)) {
+            group.valuesByField[field].push(val);
+          }
+        }
       }
     }
   }
 
   const result = [];
-  for (const [name, group] of Object.entries(groups)) {
-    let value;
-    switch (op) {
-      case 'COUNT':
-        value = group.count;
-        break;
-      case 'SUM':
-        value = group.values.reduce((a, b) => a + b, 0);
-        break;
-      case 'AVG':
-        value = group.values.length
-          ? group.values.reduce((a, b) => a + b, 0) / group.values.length
-          : 0;
-        break;
-      case 'MIN':
-        value = group.values.length ? Math.min(...group.values) : 0;
-        break;
-      case 'MAX':
-        value = group.values.length ? Math.max(...group.values) : 0;
-        break;
-      default:
-        value = group.count;
+  for (const group of Object.values(groups)) {
+    // If no explicit measure fields, behave like legacy COUNT-only aggregation
+    if (!measureFields || !measureFields.length) {
+      const value = group.count;
+      const baseRow = { name: group.dimLabel };
+      if (legendKey) baseRow.legend = group.legendLabel;
+      baseRow.value = Math.round(value * 100) / 100;
+      result.push(baseRow);
+      continue;
     }
-    result.push({ name, value: Math.round(value * 100) / 100 });
+
+    const row = { name: group.dimLabel };
+    if (legendKey) row.legend = group.legendLabel;
+    for (const field of measureFields) {
+      const arr = group.valuesByField[field] || [];
+      const op = (opByField && opByField[field]) || 'COUNT';
+      let value;
+      switch (op) {
+        case 'COUNT':
+          value = group.count;
+          break;
+        case 'SUM':
+          value = arr.reduce((a, b) => a + b, 0);
+          break;
+        case 'AVG':
+          value = arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+          break;
+        case 'MIN':
+          value = arr.length ? Math.min(...arr) : 0;
+          break;
+        case 'MAX':
+          value = arr.length ? Math.max(...arr) : 0;
+          break;
+        default:
+          value = group.count;
+      }
+      row[field] = Math.round(value * 100) / 100;
+    }
+    result.push(row);
   }
 
   return result.slice(0, limit);

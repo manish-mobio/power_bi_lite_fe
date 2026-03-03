@@ -219,6 +219,7 @@ const ChartCanvas = ({
   onDuplicate,
   onChartUpdate,
   globalFilter,
+  isPlaygroundMaximized,
 }) => {
   const scrollContainerRef = useRef(null);
   const contentRef = useRef(null);
@@ -433,7 +434,7 @@ const ChartCanvas = ({
         style={{
           position: 'absolute',
           bottom: 25,
-          right: 25,
+          right: isPlaygroundMaximized ? 50: 25,
           zIndex: 100,
           display: 'flex',
           alignItems: 'center',
