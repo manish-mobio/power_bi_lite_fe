@@ -4,6 +4,7 @@
  * This page makes the "Save dashboard" share link work (e.g. /dashboard/abc123).
  */
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useDispatch } from 'react-redux';
 import { loadDashboard } from '@/store/reducers/dashboardReducer';
@@ -15,7 +16,10 @@ function buildLayoutsAndCharts(dashboard) {
     return { chartsWithIds: [], validLayouts: {} };
   }
 
-  const chartIds = cfg.map((c) => c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`);
+  const chartIds = cfg.map(
+    (c) =>
+      c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  );
   const validLayouts = {};
 
   if (dashboard?.layouts?.lg && Array.isArray(dashboard.layouts.lg)) {
@@ -26,8 +30,10 @@ function buildLayoutsAndCharts(dashboard) {
 
     if (hasValidSaved) {
       validLayouts.lg = savedLg;
-      validLayouts.md = dashboard.layouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
-      validLayouts.sm = dashboard.layouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
+      validLayouts.md =
+        dashboard.layouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
+      validLayouts.sm =
+        dashboard.layouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
     } else {
       const items = chartIds.map((id, idx) => ({
         i: id,
@@ -93,7 +99,8 @@ export default function SharedDashboardPage() {
       .then((data) => {
         if (cancelled || data == null) return;
 
-        const { chartsWithIds, validLayouts, collection } = buildLayoutsAndCharts(data);
+        const { chartsWithIds, validLayouts, collection } =
+          buildLayoutsAndCharts(data);
 
         if (chartsWithIds.length === 0) {
           setStatus('notfound');
@@ -174,11 +181,13 @@ export default function SharedDashboardPage() {
       >
         <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
           <h1 style={{ fontSize: 24, color: '#1e293b', marginBottom: 8 }}>
-            {status === 'notfound' ? 'Dashboard not found' : 'Something went wrong'}
+            {status === 'notfound'
+              ? 'Dashboard not found'
+              : 'Something went wrong'}
           </h1>
           <p style={{ color: '#64748b', marginBottom: 24 }}>{errorMessage}</p>
-          <a
-            href="/bi-dashboard"
+          <Link
+            href='/bi-dashboard'
             style={{
               display: 'inline-block',
               padding: '12px 24px',
@@ -190,7 +199,7 @@ export default function SharedDashboardPage() {
             }}
           >
             Back to Dashboard
-          </a>
+          </Link>
         </div>
       </div>
     );

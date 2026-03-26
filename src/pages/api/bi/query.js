@@ -50,7 +50,15 @@ export default async function handler(req, res) {
     }
 
     if (isTable) {
-      const result = getTableData(items, config.selectedFields, config.sortBy, config.sortOrder, config.dimension, config.measure, config.limit);
+      const result = getTableData(
+        items,
+        config.selectedFields,
+        config.sortBy,
+        config.sortOrder,
+        config.dimension,
+        config.measure,
+        config.limit
+      );
       return res.status(200).json(result);
     }
 
@@ -74,26 +82,35 @@ export default async function handler(req, res) {
  * - legacy: measure{field,op} + measureFields
  */
 function generatePipeline(config) {
-  const { dimension, legendField, measure, measureFields, metrics, limit = 100 } = config;
+  const {
+    dimension,
+    legendField,
+    measure,
+    measureFields,
+    metrics,
+    limit = 100,
+  } = config;
   const dimKey = dimension;
   const legendKey = legendField || null;
   const defaultOp = measure?.op?.toUpperCase() || 'COUNT';
 
   // Preferred: explicit metrics array
-  let metricDefs = Array.isArray(metrics) && metrics.length
-    ? metrics
-        .filter((m) => m && m.field)
-        .map((m) => ({
-          field: m.field,
-          op: (m.op || defaultOp || 'COUNT').toUpperCase(),
-        }))
-    : [];
+  let metricDefs =
+    Array.isArray(metrics) && metrics.length
+      ? metrics
+          .filter((m) => m && m.field)
+          .map((m) => ({
+            field: m.field,
+            op: (m.op || defaultOp || 'COUNT').toUpperCase(),
+          }))
+      : [];
 
   // Backward compatibility: fall back to measureFields + single op
   if (!metricDefs.length) {
-    let fields = Array.isArray(measureFields) && measureFields.length
-      ? measureFields.filter(Boolean)
-      : [];
+    let fields =
+      Array.isArray(measureFields) && measureFields.length
+        ? measureFields.filter(Boolean)
+        : [];
     if (!fields.length && measure?.field) {
       fields = [measure.field];
     }
@@ -121,9 +138,12 @@ function runAggregation(items, pipeline) {
     const dimRaw = getNestedValue(doc, dimKey);
     const legendRaw = legendKey ? getNestedValue(doc, legendKey) : undefined;
 
-    const dimLabel = dimRaw === null || dimRaw === undefined ? '(empty)' : String(dimRaw);
+    const dimLabel =
+      dimRaw === null || dimRaw === undefined ? '(empty)' : String(dimRaw);
     const legendLabel = legendKey
-      ? (legendRaw === null || legendRaw === undefined ? '(empty)' : String(legendRaw))
+      ? legendRaw === null || legendRaw === undefined
+        ? '(empty)'
+        : String(legendRaw)
       : undefined;
 
     const key = legendKey ? `${dimLabel}|||${legendLabel}` : dimLabel;
@@ -220,7 +240,15 @@ function applySort(result, sortBy, sortOrder) {
 /**
  * Table: return raw rows with optional column filter and sort
  */
-function getTableData(items, selectedFields, sortBy, sortOrder, dimension, measure, limit = 100) {
+function getTableData(
+  items,
+  selectedFields,
+  sortBy,
+  sortOrder,
+  dimension,
+  measure,
+  limit = 100
+) {
   const maxLimit = Math.min(limit || 100, 10000); // Cap at 10k for performance
   let rows = items.slice(0, maxLimit);
 
@@ -236,7 +264,10 @@ function getTableData(items, selectedFields, sortBy, sortOrder, dimension, measu
   }
 
   if (sortBy && sortOrder) {
-    const key = sortBy === 'measure' && measure?.field ? measure.field : dimension || Object.keys(rows[0] || {})[0];
+    const key =
+      sortBy === 'measure' && measure?.field
+        ? measure.field
+        : dimension || Object.keys(rows[0] || {})[0];
     if (key) {
       rows = [...rows].sort((a, b) => {
         const va = getNestedValue(a, key);
@@ -245,7 +276,10 @@ function getTableData(items, selectedFields, sortBy, sortOrder, dimension, measu
         const nb = typeof vb === 'number';
         let cmp = 0;
         if (na && nb) cmp = va - vb;
-        else cmp = String(va ?? '').localeCompare(String(vb ?? ''), undefined, { numeric: true });
+        else
+          cmp = String(va ?? '').localeCompare(String(vb ?? ''), undefined, {
+            numeric: true,
+          });
         return sortOrder === 'asc' ? cmp : -cmp;
       });
     }
@@ -321,7 +355,9 @@ function applyDateFilter(items, filter) {
       }
       case 'quarter': {
         if (!value) return true;
-        const match = String(value).trim().match(/^(\d{4})-Q([1-4])$/i);
+        const match = String(value)
+          .trim()
+          .match(/^(\d{4})-Q([1-4])$/i);
         if (!match) return true;
         const y = parseInt(match[1], 10);
         const q = parseInt(match[2], 10);

@@ -12,6 +12,7 @@ export default async function handler(req, res) {
 
   try {
     const url = `${getBackendUrl()}/api/v1/collections`;
+    console.log(`[BI Collections] Fetching collections from: ${url}`);
     const response = await fetch(url);
 
     if (!response.ok) {

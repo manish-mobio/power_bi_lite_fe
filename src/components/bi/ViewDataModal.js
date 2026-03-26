@@ -8,7 +8,14 @@ import { AiOutlineClose } from 'react-icons/ai';
 import { MaterialReactTable } from 'material-react-table';
 import styles from './ViewDataModal.module.css';
 
-const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataFilter }) => {
+const ViewDataModal = ({
+  isOpen,
+  onClose,
+  collection,
+  fields,
+  recordCount,
+  dataFilter,
+}) => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -22,7 +29,8 @@ const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataF
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const limit = typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10000;
+    const limit =
+      typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10000;
     fetch('/api/bi/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -57,9 +65,12 @@ const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataF
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, collection, fields, recordCount, dataFilter]);
-  const columnKeys = data.length > 0 ? Object.keys(data[0]) : (fields || []).map((f) => f.name);
+  const columnKeys =
+    data.length > 0 ? Object.keys(data[0]) : (fields || []).map((f) => f.name);
   const mrtColumns = useMemo(
     () =>
       columnKeys.map((key) => ({
@@ -71,14 +82,23 @@ const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataF
 
   if (!isOpen) return null;
 
-
-
   return (
-    <div className={styles.overlay} onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="view-data-title">
+    <div
+      className={styles.overlay}
+      onClick={onClose}
+      role='dialog'
+      aria-modal='true'
+      aria-labelledby='view-data-title'
+    >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h2 id="view-data-title">View Data — {collection || 'Collection'}</h2>
-          <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close">
+          <h2 id='view-data-title'>View Data — {collection || 'Collection'}</h2>
+          <button
+            type='button'
+            className={styles.closeBtn}
+            onClick={onClose}
+            aria-label='Close'
+          >
             <AiOutlineClose />
           </button>
         </div>
@@ -109,9 +129,15 @@ const ViewDataModal = ({ isOpen, onClose, collection, fields, recordCount, dataF
         </div>
         <div className={styles.footer}>
           <span className={styles.recordInfo}>
-            {!loading && data.length > 0 && `${data.length.toLocaleString()} rows`}
+            {!loading &&
+              data.length > 0 &&
+              `${data.length.toLocaleString()} rows`}
           </span>
-          <button type="button" className={styles.closeFooterBtn} onClick={onClose}>
+          <button
+            type='button'
+            className={styles.closeFooterBtn}
+            onClick={onClose}
+          >
             Close
           </button>
         </div>

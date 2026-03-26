@@ -4,7 +4,13 @@
  */
 import React, { useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
-import { AGG_OPS, CHART_TYPES, CHART_TYPE_ICONS, SORT_ORDERS, SORT_BY_OPTIONS } from '@/utils/chartTypes';
+import {
+  AGG_OPS,
+  CHART_TYPES,
+  CHART_TYPE_ICONS,
+  SORT_ORDERS,
+  SORT_BY_OPTIONS,
+} from '@/utils/chartTypes';
 import { Select } from 'antd';
 const { Option } = Select;
 
@@ -20,26 +26,47 @@ const CHART_TYPE_LABELS = {
   table: 'Table',
 };
 
-const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove, onLayoutSizeChange }) => {
+const ConfigPanel = ({
+  config,
+  fields,
+  layouts,
+  recordCount,
+  onUpdate,
+  onRemove,
+}) => {
+  const allFields = fields || [];
+  const selectedFields = config?.selectedFields || [];
+  const allSelected =
+    allFields.length > 0 && selectedFields.length === allFields.length;
+  const someSelected =
+    selectedFields.length > 0 && selectedFields.length < allFields.length;
+  const selectAllRef = useRef(null);
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected;
+    }
+  }, [someSelected]);
+
   if (!config) {
     return (
-      <div className="bi-config-panel">
-        <div className="bi-config-panel-header">
+      <div className='bi-config-panel'>
+        <div className='bi-config-panel-header'>
           <h3>Chart Config</h3>
         </div>
-        <div className="bi-config-empty">Select a chart to configure</div>
+        <div className='bi-config-empty'>Select a chart to configure</div>
       </div>
     );
   }
 
-  const allFields = fields || [];
   const stringFields = allFields.filter((f) => f.type === 'string');
   const numberFields = allFields.filter((f) => f.type === 'number');
   const isTable = config.type === 'table';
   const isPieOrDonut = config.type === 'pie' || config.type === 'donut';
   const isCard = config.type === 'card';
-  const hasAxis = ['bar', 'line', 'area', 'stackedBar', 'scatter'].includes(config.type);
-  const selectedFields = config.selectedFields || [];
+  const hasAxis = ['bar', 'line', 'area', 'stackedBar', 'scatter'].includes(
+    config.type
+  );
 
   // Normalise Y-axis metrics (field + aggregation) for axis charts.
   // This keeps a clear separation between:
@@ -79,7 +106,11 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
       // Keep legacy fields in sync for existing API and chart code
       measureFields: cleaned.map((m) => m.field),
       measure: primary
-        ? { ...(config.measure || {}), field: primary.field, op: primary.op || 'COUNT' }
+        ? {
+            ...(config.measure || {}),
+            field: primary.field,
+            op: primary.op || 'COUNT',
+          }
         : { field: '', op: config.measure?.op || 'COUNT' },
     });
   };
@@ -94,7 +125,12 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
     } else if (key === 'type') {
       // When switching chart type, keep existing limit; only default table to a reasonable min if very small
       const updates = { type: value };
-      const maxLimit = typeof recordCount === 'number' && recordCount > 0 ? recordCount : (value === 'table' ? 10000 : 1000);
+      const maxLimit =
+        typeof recordCount === 'number' && recordCount > 0
+          ? recordCount
+          : value === 'table'
+            ? 10000
+            : 1000;
       if (value === 'table' && (!config.limit || config.limit < 50)) {
         updates.limit = Math.min(maxLimit, 100);
       }
@@ -102,7 +138,10 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
       onUpdate(updates);
     } else if (key === 'limit') {
       const num = parseInt(value, 10);
-      const maxLimit = typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10000;
+      const maxLimit =
+        typeof recordCount === 'number' && recordCount > 0
+          ? recordCount
+          : 10000;
       onUpdate({ limit: Math.min(maxLimit, Math.max(1, num || 1)) });
     } else if (key === 'title') {
       onUpdate({ title: value === '' ? undefined : value });
@@ -120,55 +159,50 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
     if (selectedFields.includes(fieldName)) {
       next = selectedFields.filter((f) => f !== fieldName);
     } else {
-      next = selectedFields.length === 0 ? [fieldName] : [...selectedFields, fieldName];
+      next =
+        selectedFields.length === 0
+          ? [fieldName]
+          : [...selectedFields, fieldName];
     }
     handleChange('selectedFields', next);
   };
-
-  // All selected = explicitly all names in selectedFields (empty array means "none selected" for UI)
-  const allSelected = allFields.length > 0 && selectedFields.length === allFields.length;
-  const someSelected = selectedFields.length > 0 && selectedFields.length < allFields.length;
-  const selectAllRef = useRef(null);
-
-  useEffect(() => {
-    if (selectAllRef.current) {
-      selectAllRef.current.indeterminate = someSelected;
-    }
-  }, [someSelected]);
 
   const handleSelectDeselectAll = () => {
     if (allSelected) {
       handleChange('selectedFields', []);
     } else {
-      handleChange('selectedFields', allFields.map((f) => f.name));
+      handleChange(
+        'selectedFields',
+        allFields.map((f) => f.name)
+      );
     }
   };
 
-  const sortable = isTable || ['bar', 'line', 'area', 'stackedBar'].includes(config.type);
+  const sortable =
+    isTable || ['bar', 'line', 'area', 'stackedBar'].includes(config.type);
   const showLimit = true;
 
   const layoutItem = layouts?.lg?.find((item) => item.i === config.id);
-  const layoutW = layoutItem?.w ?? 6;
-  const layoutH = layoutItem?.h ?? 2;
+  void layoutItem;
 
   return (
-    <div className="bi-config-panel">
-      <div className="bi-config-panel-header">
+    <div className='bi-config-panel'>
+      <div className='bi-config-panel-header'>
         <h3>Chart Config</h3>
       </div>
-      <div className="bi-config-body">
-        <div className="bi-config-row">
+      <div className='bi-config-body'>
+        <div className='bi-config-row'>
           <label>Chart name</label>
           <input
-            type="text"
-            className="bi-config-input"
-            placeholder="Optional display name"
+            type='text'
+            className='bi-config-input'
+            placeholder='Optional display name'
             value={config.title ?? ''}
             onChange={(e) => handleChange('title', e.target.value)}
           />
         </div>
 
-        <div className="bi-config-row">
+        <div className='bi-config-row'>
           <label>Chart Type</label>
           <Select
             value={config.type}
@@ -196,23 +230,23 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
           </select> */}
         </div>
 
-        <div className="bi-config-row">
+        <div className='bi-config-row'>
           <label>Color theme</label>
           <select
             value={config.themeKey || 'default'}
             onChange={(e) => onUpdate?.({ themeKey: e.target.value })}
           >
-            <option value="default">Default</option>
-            <option value="pastel">Pastel</option>
-            <option value="dark">Dark</option>
-            <option value="ocean">Ocean</option>
+            <option value='default'>Default</option>
+            <option value='pastel'>Pastel</option>
+            <option value='dark'>Dark</option>
+            <option value='ocean'>Ocean</option>
           </select>
         </div>
 
         {/* Axis charts: X-axis + Y-axis metrics (each with its own aggregation, Power BI style) */}
         {hasAxis && (
           <>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>X-axis</label>
               {/* <Select
                 mode="tags"
@@ -232,7 +266,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
               > */}
               <Select
                 allowClear
-                placeholder="Select X-axis field"
+                placeholder='Select X-axis field'
                 value={config.dimension || undefined}
                 onChange={(val) => {
                   onUpdate?.({
@@ -249,7 +283,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 ))}
               </Select>
             </div>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Y-axis metrics</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {normalizedMetrics.map((m, idx) => (
@@ -287,7 +321,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                         updateMetrics(next);
                       }}
                       style={{ flex: 1 }}
-                      placeholder="Select Y-axis field"
+                      placeholder='Select Y-axis field'
                     >
                       {numberFields.map((f) => (
                         <Option key={f.name} value={f.name}>
@@ -303,9 +337,11 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
 
                     {/* Remove this Y-axis metric */}
                     <button
-                      type="button"
+                      type='button'
                       onClick={() => {
-                        const next = normalizedMetrics.filter((_, i) => i !== idx);
+                        const next = normalizedMetrics.filter(
+                          (_, i) => i !== idx
+                        );
                         updateMetrics(next);
                       }}
                       style={{
@@ -316,7 +352,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                         fontSize: 16,
                         padding: '0 4px',
                       }}
-                      title="Remove Y-axis metric"
+                      title='Remove Y-axis metric'
                     >
                       ×
                     </button>
@@ -325,7 +361,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
 
                 {/* Add new Y-axis metric */}
                 <button
-                  type="button"
+                  type='button'
                   onClick={() => {
                     const firstNumeric = numberFields[0]?.name;
                     const firstString = stringFields[0]?.name;
@@ -340,7 +376,10 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
 
                     updateMetrics([
                       ...normalizedMetrics,
-                      { field: fallbackField, op: (config.measure?.op || 'COUNT').toUpperCase() },
+                      {
+                        field: fallbackField,
+                        op: (config.measure?.op || 'COUNT').toUpperCase(),
+                      },
                     ]);
                   }}
                   style={{
@@ -359,7 +398,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
               </div>
             </div>
 
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Legend field</label>
               <select
                 value={config.legendField || ''}
@@ -367,7 +406,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                   onUpdate?.({ legendField: e.target.value || undefined })
                 }
               >
-                <option value="">— None —</option>
+                <option value=''>— None —</option>
                 {stringFields.map((f) => (
                   <option key={f.name} value={f.name}>
                     {f.name}
@@ -376,34 +415,40 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
               </select>
             </div>
 
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>X-axis label color</label>
               <input
-                type="color"
+                type='color'
                 value={config.xAxisLabelColor || '#374151'}
-                onChange={(e) => onUpdate?.({ xAxisLabelColor: e.target.value })}
+                onChange={(e) =>
+                  onUpdate?.({ xAxisLabelColor: e.target.value })
+                }
               />
             </div>
 
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Y-axis label color</label>
               <input
-                type="color"
+                type='color'
                 value={config.yAxisLabelColor || '#374151'}
-                onChange={(e) => onUpdate?.({ yAxisLabelColor: e.target.value })}
+                onChange={(e) =>
+                  onUpdate?.({ yAxisLabelColor: e.target.value })
+                }
               />
             </div>
 
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Axis font style</label>
               <select
                 value={config.axisLabelFontStyle || 'regular'}
-                onChange={(e) => onUpdate?.({ axisLabelFontStyle: e.target.value })}
+                onChange={(e) =>
+                  onUpdate?.({ axisLabelFontStyle: e.target.value })
+                }
               >
-                <option value="regular">Regular</option>
-                <option value="bold">Bold</option>
-                <option value="italic">Italic</option>
-                <option value="boldItalic">Bold italic</option>
+                <option value='regular'>Regular</option>
+                <option value='bold'>Bold</option>
+                <option value='italic'>Italic</option>
+                <option value='boldItalic'>Bold italic</option>
               </select>
             </div>
           </>
@@ -412,7 +457,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
         {/* Pie / Donut: Legend + Values only (no X/Y) */}
         {isPieOrDonut && (
           <>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Legend</label>
               <select
                 value={config.dimension}
@@ -425,7 +470,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 ))}
               </select>
             </div>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Values</label>
               <select
                 value={config.measure?.op}
@@ -438,7 +483,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 ))}
               </select>
             </div>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Values field</label>
               <select
                 value={config.measure?.field}
@@ -462,7 +507,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
         {/* Card: single Value only */}
         {isCard && (
           <>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Value</label>
               <select
                 value={config.measure?.op}
@@ -475,7 +520,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 ))}
               </select>
             </div>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Value field</label>
               <select
                 value={config.measure?.field}
@@ -493,13 +538,13 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 ))}
               </select>
             </div>
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Category (optional)</label>
               <select
                 value={config.dimension}
                 onChange={(e) => handleChange('dimension', e.target.value)}
               >
-                <option value="">— None —</option>
+                <option value=''>— None —</option>
                 {stringFields.map((f) => (
                   <option key={f.name} value={f.name}>
                     {f.name}
@@ -511,12 +556,12 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
         )}
 
         {isTable && (
-          <div className="bi-config-row">
+          <div className='bi-config-row'>
             <label>Columns to show</label>
             {allFields.length > 0 && (
-              <label className="bi-config-select-all">
+              <label className='bi-config-select-all'>
                 <input
-                  type="checkbox"
+                  type='checkbox'
                   checked={allSelected}
                   ref={selectAllRef}
                   onChange={handleSelectDeselectAll}
@@ -524,12 +569,14 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 <span>{allSelected ? 'Deselect all' : 'Select all'}</span>
               </label>
             )}
-            <div className="bi-config-column-list">
-              {allFields.length === 0 && <span className="bi-config-hint">Load schema first</span>}
+            <div className='bi-config-column-list'>
+              {allFields.length === 0 && (
+                <span className='bi-config-hint'>Load schema first</span>
+              )}
               {allFields.map((f) => (
-                <label key={f.name} className="bi-config-column-item">
+                <label key={f.name} className='bi-config-column-item'>
                   <input
-                    type="checkbox"
+                    type='checkbox'
                     checked={selectedFields.includes(f.name)}
                     onChange={() => toggleField(f.name)}
                   />
@@ -541,13 +588,26 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
         )}
 
         {showLimit && (
-          <div className="bi-config-row">
+          <div className='bi-config-row'>
             <label>Limit {isTable ? '(rows)' : '(results)'}</label>
             <input
-              type="number"
+              type='number'
               min={1}
-              max={typeof recordCount === 'number' && recordCount > 0 ? recordCount : (isTable ? 10000 : 1000)}
-              value={config.limit ?? (typeof recordCount === 'number' && recordCount > 0 ? recordCount : (isTable ? 100 : 10))}
+              max={
+                typeof recordCount === 'number' && recordCount > 0
+                  ? recordCount
+                  : isTable
+                    ? 10000
+                    : 1000
+              }
+              value={
+                config.limit ??
+                (typeof recordCount === 'number' && recordCount > 0
+                  ? recordCount
+                  : isTable
+                    ? 100
+                    : 10)
+              }
               onChange={(e) => handleChange('limit', e.target.value)}
             />
           </div>
@@ -556,16 +616,19 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
         {sortable && (
           <>
             {isTable && (
-              <div className="bi-config-row">
+              <div className='bi-config-row'>
                 <label>Sort by column</label>
                 <select
                   value={config.dimension || ''}
                   onChange={(e) => {
                     const val = e.target.value;
-                    onUpdate({ dimension: val, sortBy: val ? 'dimension' : undefined });
+                    onUpdate({
+                      dimension: val,
+                      sortBy: val ? 'dimension' : undefined,
+                    });
                   }}
                 >
-                  <option value="">— None —</option>
+                  <option value=''>— None —</option>
                   {allFields.map((f) => (
                     <option key={f.name} value={f.name}>
                       {f.name}
@@ -575,7 +638,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
               </div>
             )}
             {!isTable && (
-              <div className="bi-config-row">
+              <div className='bi-config-row'>
                 <label>Sort By</label>
                 <select
                   value={config.sortBy || 'measure'}
@@ -589,7 +652,7 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
                 </select>
               </div>
             )}
-            <div className="bi-config-row">
+            <div className='bi-config-row'>
               <label>Order</label>
               <select
                 value={config.sortOrder || 'desc'}
@@ -606,8 +669,8 @@ const ConfigPanel = ({ config, fields, layouts, recordCount, onUpdate, onRemove,
         )}
 
         <button
-          type="button"
-          className="bi-remove-chart-btn"
+          type='button'
+          className='bi-remove-chart-btn'
           onClick={() => onRemove(config.id)}
         >
           Remove Chart
@@ -624,7 +687,6 @@ ConfigPanel.propTypes = {
   recordCount: PropTypes.number,
   onUpdate: PropTypes.func,
   onRemove: PropTypes.func,
-  onLayoutSizeChange: PropTypes.func,
 };
 
 export default ConfigPanel;

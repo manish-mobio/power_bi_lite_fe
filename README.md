@@ -38,11 +38,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ## Backend API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/users?limit=N` | Fetch users (limit optional) |
-| GET | `/api/v1/dashboards` | List saved dashboards |
-| POST | `/api/v1/dashboards` | Save a dashboard |
+| Method | Endpoint                | Description                  |
+| ------ | ----------------------- | ---------------------------- |
+| GET    | `/api/v1/users?limit=N` | Fetch users (limit optional) |
+| GET    | `/api/v1/dashboards`    | List saved dashboards        |
+| POST   | `/api/v1/dashboards`    | Save a dashboard             |
 
 ## Docker
 

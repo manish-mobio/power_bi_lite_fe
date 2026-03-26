@@ -22,7 +22,9 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
         const contentType = res.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           await res.text(); // Consume response
-          throw new Error(`Server returned ${res.status}: ${res.statusText}. Collection may not exist.`);
+          throw new Error(
+            `Server returned ${res.status}: ${res.statusText}. Collection may not exist.`
+          );
         }
         return res.json();
       })
@@ -31,15 +33,17 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
         if (Array.isArray(data)) {
           // Legacy format: just array of fields (no recordCount)
           setFields(data);
-          if (onFieldsLoaded) onFieldsLoaded({ fields: data, recordCount: null });
+          if (onFieldsLoaded)
+            onFieldsLoaded({ fields: data, recordCount: null });
         } else if (data?.fields || data?.schema) {
           // New format: object with fields and recordCount
           const fieldsData = data.fields || data.schema || [];
           setFields(fieldsData);
           if (onFieldsLoaded) {
-            onFieldsLoaded({ 
-              fields: fieldsData, 
-              recordCount: data.recordCount !== undefined ? data.recordCount : null 
+            onFieldsLoaded({
+              fields: fieldsData,
+              recordCount:
+                data.recordCount !== undefined ? data.recordCount : null,
             });
           }
         } else if (data?.error) {
@@ -54,7 +58,11 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       .catch((err) => {
         if (!cancelled) {
           const errorMsg = err.message || 'Failed to load schema';
-          setError(errorMsg.includes('JSON') ? 'Collection not found or server error' : errorMsg);
+          setError(
+            errorMsg.includes('JSON')
+              ? 'Collection not found or server error'
+              : errorMsg
+          );
           setFields([]);
         }
       })
@@ -62,7 +70,9 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
         if (!cancelled) setLoading(false);
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [collection, onFieldsLoaded]);
 
   const handleAddChart = (dimension, measureField, measureOp) => {
@@ -78,15 +88,15 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
   const defaultMeasure = numberFields[0]?.name || 'id';
 
   return (
-    <div className="bi-field-list">
-      <div className="bi-field-list-header">
+    <div className='bi-field-list'>
+      <div className='bi-field-list-header'>
         <h3>Fields</h3>
-  
+
         {/* 🔹 Move Add Chart button to top for better UX */}
         {!loading && !error && fields.length > 0 && (
           <button
-            type="button"
-            className="bi-add-chart-btn"
+            type='button'
+            className='bi-add-chart-btn'
             disabled={!collection}
             onClick={() =>
               handleAddChart(defaultDimension, defaultMeasure, 'COUNT')
@@ -97,28 +107,28 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
           </button>
         )}
       </div>
-  
-      <div className="bi-field-list-body">
-        {loading && <div className="bi-field-loading">Loading fields...</div>}
-        {error && <div className="bi-field-error">{error}</div>}
+
+      <div className='bi-field-list-body'>
+        {loading && <div className='bi-field-loading'>Loading fields...</div>}
+        {error && <div className='bi-field-error'>{error}</div>}
         {!loading && !error && fields.length === 0 && (
-          <div className="bi-field-empty">No fields found</div>
+          <div className='bi-field-empty'>No fields found</div>
         )}
         {!loading && !error && fields.length > 0 && (
           <>
-            <div className="bi-field-group">
-              <div className="bi-field-group-title">Dimensions (group by)</div>
+            <div className='bi-field-group'>
+              <div className='bi-field-group-title'>Dimensions (group by)</div>
               {stringFields.map((f) => (
-                <div key={f.name} className="bi-field-item">
+                <div key={f.name} className='bi-field-item'>
                   {f.name}
                 </div>
               ))}
             </div>
-  
-            <div className="bi-field-group">
-              <div className="bi-field-group-title">Measures (aggregate)</div>
+
+            <div className='bi-field-group'>
+              <div className='bi-field-group-title'>Measures (aggregate)</div>
               {numberFields.map((f) => (
-                <div key={f.name} className="bi-field-item">
+                <div key={f.name} className='bi-field-item'>
                   {f.name} (number)
                 </div>
               ))}
@@ -128,7 +138,6 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       </div>
     </div>
   );
-  
 };
 
 FieldList.propTypes = {

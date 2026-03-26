@@ -24,28 +24,37 @@
  */
 
 import {
-    BarChartOutlined,
-    LineChartOutlined,
-    PieChartOutlined,
-    DotChartOutlined,
-    AreaChartOutlined,
-    TableOutlined,
+  BarChartOutlined,
+  LineChartOutlined,
+  PieChartOutlined,
+  DotChartOutlined,
+  AreaChartOutlined,
+  TableOutlined,
 } from '@ant-design/icons';
 
 export const AGG_OPS = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
-export const CHART_TYPES = ['bar', 'line', 'pie', 'area', 'stackedBar', 'donut', 'scatter', 'card', 'table'];
+export const CHART_TYPES = [
+  'bar',
+  'line',
+  'pie',
+  'area',
+  'stackedBar',
+  'donut',
+  'scatter',
+  'card',
+  'table',
+];
 export const SORT_ORDERS = ['asc', 'desc'];
 export const SORT_BY_OPTIONS = ['dimension', 'measure'];
 
 export const CHART_TYPE_ICONS = {
-    bar: <BarChartOutlined />,
-    line: <LineChartOutlined />,
-    pie: <PieChartOutlined />,
-    donut: <PieChartOutlined />,
-    area: <AreaChartOutlined />,
-    stackedBar: <BarChartOutlined />,
-    scatter: <DotChartOutlined />,
-    card: <BarChartOutlined />,
-    table: <TableOutlined />,
+  bar: <BarChartOutlined />,
+  line: <LineChartOutlined />,
+  pie: <PieChartOutlined />,
+  donut: <PieChartOutlined />,
+  area: <AreaChartOutlined />,
+  stackedBar: <BarChartOutlined />,
+  scatter: <DotChartOutlined />,
+  card: <BarChartOutlined />,
+  table: <TableOutlined />,
 };
-

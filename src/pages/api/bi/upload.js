@@ -16,10 +16,17 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
-  
+
   try {
     const { fileName, fileContent, fileType, collectionName } = req.body;
-    console.log('upload file log by manish::', fileName, fileContent,"+s", fileType, collectionName);
+    console.log(
+      'upload file log by manish::',
+      fileName,
+      fileContent,
+      '+s',
+      fileType,
+      collectionName
+    );
 
     if (!fileContent) {
       return res.status(400).json({ error: 'File content is required' });
@@ -38,13 +45,15 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: `Backend error: ${response.status}` }));
+      const errorData = await response
+        .json()
+        .catch(() => ({ error: `Backend error: ${response.status}` }));
       return res.status(response.status).json(errorData);
     }
 
     const result = await response.json();
-    console.log("to check count log of result::", result);
-    
+    console.log('to check count log of result::', result);
+
     return res.status(200).json(result);
   } catch (error) {
     console.error('[BI Upload Error]', error);

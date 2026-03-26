@@ -4,7 +4,8 @@
  */
 import { createSlice } from '@reduxjs/toolkit';
 
-const generateId = () => `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+const generateId = () =>
+  `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 const initialState = {
   collection: '',
@@ -78,8 +79,10 @@ const dashboardSlice = createSlice({
         if (!Array.isArray(items)) continue;
         const idx = items.findIndex((item) => item.i === id);
         if (idx >= 0) {
-          if (w != null) state.layouts[breakpoint][idx].w = Math.min(12, Math.max(1, w));
-          if (h != null) state.layouts[breakpoint][idx].h = Math.min(10, Math.max(1, h));
+          if (w != null)
+            state.layouts[breakpoint][idx].w = Math.min(12, Math.max(1, w));
+          if (h != null)
+            state.layouts[breakpoint][idx].h = Math.min(10, Math.max(1, h));
         }
       }
     },
@@ -90,8 +93,14 @@ const dashboardSlice = createSlice({
         state.collection = String(collection).trim();
       }
       if (charts && Array.isArray(charts)) {
-        state.charts = charts.map((c) => ({ ...createDefaultChartConfig(), ...c }));
-        if (state.charts.length && (collection == null || !String(collection).trim())) {
+        state.charts = charts.map((c) => ({
+          ...createDefaultChartConfig(),
+          ...c,
+        }));
+        if (
+          state.charts.length &&
+          (collection == null || !String(collection).trim())
+        ) {
           const firstCollection = state.charts[0].collection;
           if (firstCollection) state.collection = firstCollection;
         }
