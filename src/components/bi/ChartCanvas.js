@@ -34,110 +34,192 @@ function getHandleStyle(dir) {
     cursor: cursorMap[dir],
   };
   switch (dir) {
-    case 'n':  return { ...base, top: -h/2, left: h, right: h, height: h };
-    case 's':  return { ...base, bottom: -h/2, left: h, right: h, height: h };
-    case 'e':  return { ...base, right: -h/2, top: h, bottom: h, width: h };
-    case 'w':  return { ...base, left: -h/2, top: h, bottom: h, width: h };
-    case 'ne': return { ...base, top: -h/2, right: -h/2, width: h*2, height: h*2 };
-    case 'se': return { ...base, bottom: -h/2, right: -h/2, width: h*2, height: h*2 };
-    case 'sw': return { ...base, bottom: -h/2, left: -h/2, width: h*2, height: h*2 };
-    case 'nw': return { ...base, top: -h/2, left: -h/2, width: h*2, height: h*2 };
-    default:   return base;
+    case 'n':
+      return { ...base, top: -h / 2, left: h, right: h, height: h };
+    case 's':
+      return { ...base, bottom: -h / 2, left: h, right: h, height: h };
+    case 'e':
+      return { ...base, right: -h / 2, top: h, bottom: h, width: h };
+    case 'w':
+      return { ...base, left: -h / 2, top: h, bottom: h, width: h };
+    case 'ne':
+      return {
+        ...base,
+        top: -h / 2,
+        right: -h / 2,
+        width: h * 2,
+        height: h * 2,
+      };
+    case 'se':
+      return {
+        ...base,
+        bottom: -h / 2,
+        right: -h / 2,
+        width: h * 2,
+        height: h * 2,
+      };
+    case 'sw':
+      return {
+        ...base,
+        bottom: -h / 2,
+        left: -h / 2,
+        width: h * 2,
+        height: h * 2,
+      };
+    case 'nw':
+      return {
+        ...base,
+        top: -h / 2,
+        left: -h / 2,
+        width: h * 2,
+        height: h * 2,
+      };
+    default:
+      return base;
   }
 }
 
 const DEFAULT_CANVAS_MIN = { width: 2400, height: 1600 };
 
 /** Single draggable + resizable chart item; positions relative to playground content */
-const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplicate, onUpdate, initialRect, onRectChange, contentBounds }) => {
-  const [rect, setRect] = useState(initialRect || { x: 40, y: 40, w: 480, h: 300 });
+const ChartItem = ({
+  config,
+  isSelected,
+  onSelect,
+  onRefresh,
+  onRemove,
+  onDuplicate,
+  onUpdate,
+  initialRect,
+  onRectChange,
+  contentBounds,
+  globalFilter,
+}) => {
+  const [rect, setRect] = useState(
+    initialRect || { x: 40, y: 40, w: 480, h: 300 }
+  );
   const rectRef = useRef(rect);
   const containerRef = useRef(null);
+  const onRectChangeRef = useRef(onRectChange);
 
-  useEffect(() => { rectRef.current = rect; }, [rect]);
+  // Keep the latest callback without re-running the rect-change effect.
+  useEffect(() => {
+    onRectChangeRef.current = onRectChange;
+  }, [onRectChange]);
 
   useEffect(() => {
-    onRectChange?.(config.id, rect);
+    rectRef.current = rect;
   }, [rect]);
 
-  const getCanvasBounds = useCallback(() => ({
-    width: contentBounds.current.width,
-    height: contentBounds.current.height,
-  }), [contentBounds]);
+  useEffect(() => {
+    onRectChangeRef.current?.(config.id, rect);
+  }, [rect, config.id]);
 
-  const onDragMouseDown = useCallback((e) => {
-    if (e.target.dataset.handle) return;
-    e.preventDefault();
-    e.stopPropagation();
-    onSelect?.(config.id);
+  const getCanvasBounds = useCallback(
+    () => ({
+      width: contentBounds.current.width,
+      height: contentBounds.current.height,
+    }),
+    [contentBounds]
+  );
 
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startRect = { ...rectRef.current };
+  const onDragMouseDown = useCallback(
+    (e) => {
+      if (e.target.dataset.handle) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onSelect?.(config.id);
 
-    const onMove = (me) => {
-      const canvas = getCanvasBounds();
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
-      const newX = Math.max(0, Math.min(startRect.x + dx, Math.max(canvas.width, startRect.x + startRect.w) - startRect.w));
-      const newY = Math.max(0, Math.min(startRect.y + dy, Math.max(canvas.height, startRect.y + startRect.h) - startRect.h));
-      const next = { ...rectRef.current, x: newX, y: newY };
-      rectRef.current = next;
-      setRect(next);
-    };
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [config.id, onSelect, getCanvasBounds]);
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startRect = { ...rectRef.current };
 
-  const onResizeMouseDown = useCallback((e, dir) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onSelect?.(config.id);
+      const onMove = (me) => {
+        const bounds = getCanvasBounds();
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
+        const newX = Math.max(
+          0,
+          Math.min(
+            startRect.x + dx,
+            Math.max(bounds.width, startRect.x + startRect.w) - startRect.w
+          )
+        );
+        const newY = Math.max(
+          0,
+          Math.min(
+            startRect.y + dy,
+            Math.max(bounds.height, startRect.y + startRect.h) - startRect.h
+          )
+        );
+        const next = { ...rectRef.current, x: newX, y: newY };
+        rectRef.current = next;
+        setRect(next);
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [config.id, onSelect, getCanvasBounds]
+  );
 
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startRect = { ...rectRef.current };
+  const onResizeMouseDown = useCallback(
+    (e, dir) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onSelect?.(config.id);
 
-    const onMove = (me) => {
-      const canvas = getCanvasBounds();
-      const dx = me.clientX - startX;
-      const dy = me.clientY - startY;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startRect = { ...rectRef.current };
 
-      let { x, y, w, h } = startRect;
+      const onMove = (me) => {
+        void getCanvasBounds();
+        const dx = me.clientX - startX;
+        const dy = me.clientY - startY;
 
-      if (dir.includes('e')) {
-        w = Math.max(MIN_W, startRect.w + dx);
-      }
-      if (dir.includes('w')) {
-        const newX = Math.max(0, Math.min(startRect.x + dx, startRect.x + startRect.w - MIN_W));
-        w = startRect.w + (startRect.x - newX);
-        x = newX;
-      }
-      if (dir.includes('s')) {
-        h = Math.max(MIN_H, startRect.h + dy);
-      }
-      if (dir.includes('n')) {
-        const newY = Math.max(0, Math.min(startRect.y + dy, startRect.y + startRect.h - MIN_H));
-        h = startRect.h + (startRect.y - newY);
-        y = newY;
-      }
+        let { x, y, w, h } = startRect;
 
-      const next = { x, y, w, h };
-      rectRef.current = next;
-      setRect(next);
-    };
+        if (dir.includes('e')) {
+          w = Math.max(MIN_W, startRect.w + dx);
+        }
+        if (dir.includes('w')) {
+          const newX = Math.max(
+            0,
+            Math.min(startRect.x + dx, startRect.x + startRect.w - MIN_W)
+          );
+          w = startRect.w + (startRect.x - newX);
+          x = newX;
+        }
+        if (dir.includes('s')) {
+          h = Math.max(MIN_H, startRect.h + dy);
+        }
+        if (dir.includes('n')) {
+          const newY = Math.max(
+            0,
+            Math.min(startRect.y + dy, startRect.y + startRect.h - MIN_H)
+          );
+          h = startRect.h + (startRect.y - newY);
+          y = newY;
+        }
 
-    const onUp = () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [config.id, onSelect, getCanvasBounds]);
+        const next = { x, y, w, h };
+        rectRef.current = next;
+        setRect(next);
+      };
+
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [config.id, onSelect, getCanvasBounds]
+  );
 
   return (
     <div
@@ -150,14 +232,18 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
         width: rect.w,
         height: rect.h,
         boxSizing: 'border-box',
-        border: isSelected ? '1px solid rgb(214, 225, 233)' : '1px solid transparent',
+        border: isSelected
+          ? '1px solid rgb(214, 225, 233)'
+          : '1px solid transparent',
         borderRadius: 6,
-        
+
         background: '#fff',
         zIndex: isSelected ? 10 : 1,
         transition: 'border-color 0.15s, box-shadow 0.15s',
         userSelect: 'none',
-        boxShadow: isSelected ? '0 4px 12px rgba(0,0,0,0.08)' : '0 1px 3px rgba(0,0,0,0.06)',
+        boxShadow: isSelected
+          ? '0 4px 12px rgba(0,0,0,0.08)'
+          : '0 1px 3px rgba(0,0,0,0.06)',
       }}
       onClick={() => onSelect?.(config.id)}
     >
@@ -174,6 +260,7 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
           onRemove={onRemove}
           onDuplicate={onDuplicate}
           onUpdate={onUpdate}
+          globalFilter={globalFilter}
         />
       </div>
 
@@ -188,9 +275,10 @@ const ChartItem = ({ config, isSelected, onSelect, onRefresh, onRemove, onDuplic
             opacity: isSelected ? 1 : 0,
             transition: 'opacity 0.15s',
             // Visual dot for corners, bar for edges
-            background: dir.length === 2
-              ? '#0078d4'           // corner = solid blue dot
-              : 'rgba(0,120,212,0.35)', // edge = translucent bar
+            background:
+              dir.length === 2
+                ? '#0078d4' // corner = solid blue dot
+                : 'rgba(0,120,212,0.35)', // edge = translucent bar
             borderRadius: dir.length === 2 ? '50%' : 3,
           }}
         />
@@ -217,29 +305,42 @@ const ChartCanvas = ({
   onRemove,
   onDuplicate,
   onChartUpdate,
+  globalFilter,
+  isPlaygroundMaximized,
 }) => {
   const scrollContainerRef = useRef(null);
   const contentRef = useRef(null);
   const rectsRef = useRef({});
-  const contentBounds = useRef({ width: DEFAULT_CANVAS_MIN.width, height: DEFAULT_CANVAS_MIN.height });
+  const contentBounds = useRef({
+    width: DEFAULT_CANVAS_MIN.width,
+    height: DEFAULT_CANVAS_MIN.height,
+  });
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
-  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
 
-  const getInitialRect = useCallback((config, idx) => {
-    const saved = savedLayouts?.rects?.[config.id];
-    if (saved) return saved;
-    const col = idx % 2;
-    const row = Math.floor(idx / 2);
-    return {
-      x: col * 500 + 24,
-      y: row * 340 + 24,
-      w: 460,
-      h: 300,
-    };
-  }, [savedLayouts]);
+  const getInitialRect = useCallback(
+    (config, idx) => {
+      const saved = savedLayouts?.rects?.[config.id];
+      if (saved) return saved;
+      const col = idx % 2;
+      const row = Math.floor(idx / 2);
+      return {
+        x: col * 500 + 24,
+        y: row * 340 + 24,
+        w: 460,
+        h: 300,
+      };
+    },
+    [savedLayouts]
+  );
 
-  const [contentSize, setContentSize] = useState(() => ({ width: DEFAULT_CANVAS_MIN.width, height: DEFAULT_CANVAS_MIN.height }));
+  const [contentSize, setContentSize] = useState(() => ({
+    width: DEFAULT_CANVAS_MIN.width,
+    height: DEFAULT_CANVAS_MIN.height,
+  }));
 
   const updateContentSize = useCallback(() => {
     const rects = rectsRef.current;
@@ -257,27 +358,28 @@ const ChartCanvas = ({
     setContentSize({ width: maxX, height: maxY });
   }, []);
 
-  const handleRectChange = useCallback((id, rect) => {
-    rectsRef.current[id] = rect;
-    if (onLayoutChange) {
-      onLayoutChange({ rects: { ...rectsRef.current } });
-    }
-    const rects = rectsRef.current;
-    let maxX = DEFAULT_CANVAS_MIN.width;
-    let maxY = DEFAULT_CANVAS_MIN.height;
-    Object.values(rects).forEach((r) => {
-      if (r && typeof r.x === 'number' && typeof r.w === 'number') {
-        maxX = Math.max(maxX, r.x + r.w + 80);
+  const handleRectChange = useCallback(
+    (id, rect) => {
+      rectsRef.current[id] = rect;
+      if (onLayoutChange) {
+        onLayoutChange({ rects: { ...rectsRef.current } });
       }
-      if (r && typeof r.y === 'number' && typeof r.h === 'number') {
-        maxY = Math.max(maxY, r.y + r.h + 80);
-      }
-    });
-    contentBounds.current = { width: maxX, height: maxY };
-    setContentSize({ width: maxX, height: maxY });
-  }, [onLayoutChange]);
-
-  const chartIds = charts.map((c) => c.id).join(',');
+      const rects = rectsRef.current;
+      let maxX = DEFAULT_CANVAS_MIN.width;
+      let maxY = DEFAULT_CANVAS_MIN.height;
+      Object.values(rects).forEach((r) => {
+        if (r && typeof r.x === 'number' && typeof r.w === 'number') {
+          maxX = Math.max(maxX, r.x + r.w + 80);
+        }
+        if (r && typeof r.y === 'number' && typeof r.h === 'number') {
+          maxY = Math.max(maxY, r.y + r.h + 80);
+        }
+      });
+      contentBounds.current = { width: maxX, height: maxY };
+      setContentSize({ width: maxX, height: maxY });
+    },
+    [onLayoutChange]
+  );
 
   useEffect(() => {
     const ids = new Set(charts.map((c) => c.id));
@@ -290,7 +392,7 @@ const ChartCanvas = ({
       }
     });
     updateContentSize();
-  }, [chartIds, getInitialRect, updateContentSize]);
+  }, [charts, getInitialRect, updateContentSize]);
 
   // Power BI–style: zoom only with Ctrl+Wheel (or Cmd+Wheel). Plain scroll = pan (no zoom).
   const handleWheel = useCallback((e) => {
@@ -325,8 +427,14 @@ const ChartCanvas = ({
     });
   }, []);
 
-  const handleZoomIn = useCallback(() => setZoom((prev) => Math.min(2, prev + 0.15)), []);
-  const handleZoomOut = useCallback(() => setZoom((prev) => Math.max(0.25, prev - 0.15)), []);
+  const handleZoomIn = useCallback(
+    () => setZoom((prev) => Math.min(2, prev + 0.15)),
+    []
+  );
+  const handleZoomOut = useCallback(
+    () => setZoom((prev) => Math.max(0.25, prev - 0.15)),
+    []
+  );
   const handleZoomReset = useCallback(() => setZoom(1), []);
 
   // Keyboard delete
@@ -334,7 +442,11 @@ const ChartCanvas = ({
     const handleKeyDown = (e) => {
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedChartId) {
         const t = e.target;
-        if (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA' && !t.isContentEditable) {
+        if (
+          t.tagName !== 'INPUT' &&
+          t.tagName !== 'TEXTAREA' &&
+          !t.isContentEditable
+        ) {
           e.preventDefault();
           onRemove?.(selectedChartId);
         }
@@ -347,7 +459,7 @@ const ChartCanvas = ({
   if (charts.length === 0) {
     return (
       <div
-        className="bi-canvas-empty"
+        className='bi-canvas-empty'
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -365,7 +477,7 @@ const ChartCanvas = ({
 
   return (
     <div
-      className="bi-chart-canvas bi-playground"
+      className='bi-chart-canvas bi-playground'
       style={{
         position: 'relative',
         width: '100%',
@@ -387,7 +499,10 @@ const ChartCanvas = ({
           WebkitOverflowScrolling: 'touch',
         }}
         onMouseDown={(e) => {
-          if (e.target === scrollContainerRef.current || e.target === contentRef.current) {
+          if (
+            e.target === scrollContainerRef.current ||
+            e.target === contentRef.current
+          ) {
             onSelect?.(null);
           }
         }}
@@ -395,7 +510,7 @@ const ChartCanvas = ({
       >
         <div
           ref={contentRef}
-          className="bi-playground-content"
+          className='bi-playground-content'
           style={{
             position: 'relative',
             width: contentSize.width,
@@ -415,10 +530,15 @@ const ChartCanvas = ({
               onRefresh={onRefresh}
               onRemove={onRemove}
               onDuplicate={onDuplicate}
-              onUpdate={onChartUpdate ? (updates) => onChartUpdate(config.id, updates) : undefined}
+              onUpdate={
+                onChartUpdate
+                  ? (updates) => onChartUpdate(config.id, updates)
+                  : undefined
+              }
               initialRect={getInitialRect(config, idx)}
               onRectChange={handleRectChange}
               contentBounds={contentBounds}
+              globalFilter={globalFilter}
             />
           ))}
         </div>
@@ -426,11 +546,11 @@ const ChartCanvas = ({
 
       {/* Zoom controls - sticky at bottom right; outside scroll so they never move */}
       <div
-        className="bi-zoom-controls"
+        className='bi-zoom-controls'
         style={{
           position: 'absolute',
           bottom: 25,
-          right: 25,
+          right: isPlaygroundMaximized ? 50 : 25,
           zIndex: 100,
           display: 'flex',
           alignItems: 'center',
@@ -443,7 +563,7 @@ const ChartCanvas = ({
         }}
       >
         <button
-          type="button"
+          type='button'
           onClick={handleZoomOut}
           style={{
             padding: '6px 10px',
@@ -455,15 +575,23 @@ const ChartCanvas = ({
             fontWeight: 600,
             lineHeight: 1,
           }}
-          title="Zoom out (Ctrl+Scroll)"
+          title='Zoom out (Ctrl+Scroll)'
         >
           −
         </button>
-        <span style={{ minWidth: 48, textAlign: 'center', fontSize: 12, fontWeight: 500, color: '#555' }}>
+        <span
+          style={{
+            minWidth: 48,
+            textAlign: 'center',
+            fontSize: 12,
+            fontWeight: 500,
+            color: '#555',
+          }}
+        >
           {Math.round(zoom * 100)}%
         </span>
         <button
-          type="button"
+          type='button'
           onClick={handleZoomIn}
           style={{
             padding: '6px 10px',
@@ -475,12 +603,12 @@ const ChartCanvas = ({
             fontWeight: 600,
             lineHeight: 1,
           }}
-          title="Zoom in (Ctrl+Scroll)"
+          title='Zoom in (Ctrl+Scroll)'
         >
           +
         </button>
         <button
-          type="button"
+          type='button'
           onClick={handleZoomReset}
           style={{
             padding: '6px 10px',
@@ -491,7 +619,7 @@ const ChartCanvas = ({
             fontSize: 11,
             fontWeight: 500,
           }}
-          title="Reset zoom"
+          title='Reset zoom'
         >
           Reset
         </button>
@@ -510,6 +638,13 @@ ChartCanvas.propTypes = {
   onRemove: PropTypes.func,
   onDuplicate: PropTypes.func,
   onChartUpdate: PropTypes.func,
+  globalFilter: PropTypes.shape({
+    field: PropTypes.string,
+    type: PropTypes.string,
+    from: PropTypes.string,
+    to: PropTypes.string,
+    value: PropTypes.string,
+  }),
 };
 
 export default ChartCanvas;

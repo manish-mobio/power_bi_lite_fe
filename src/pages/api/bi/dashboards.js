@@ -13,7 +13,9 @@ export default async function handler(req, res) {
       const response = await fetch(DASHBOARDS_ENDPOINT());
       if (!response.ok) return res.status(200).json([]);
       const data = await response.json();
-      const list = Array.isArray(data) ? data : data?.data ?? data?.dashboards ?? [];
+      const list = Array.isArray(data)
+        ? data
+        : data?.data ?? data?.dashboards ?? [];
       return res.status(200).json(list);
     } catch (error) {
       console.error('[BI Dashboards GET]', error);
@@ -24,12 +26,13 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const body = req.body || {};
-      const { name = 'My Dashboard', charts = [], layouts = {} } = body;
+      const { name = 'My Dashboard', charts = [], layouts = {}, logo } = body;
 
       const payload = {
         name,
         charts,
         layouts,
+        ...(logo != null && typeof logo === 'string' ? { logo } : {}),
         updatedAt: new Date().toISOString(),
       };
 
