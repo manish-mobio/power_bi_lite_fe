@@ -1,0 +1,85 @@
+.passwordWrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.passwordInput {
+  width: 100%;
+  padding: 10px 40px 10px 10px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  box-sizing: border-box;
+}
+
+.togglePwd {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.togglePwd:hover {
+  color: #0f172a;
+}
+
+.togglePwd:focus-visible {
+  outline: 2px solid #0f6cbd;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: none;
+  background: #0f6cbd;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  box-sizing: border-box;
+  transition:
+    opacity 0.15s,
+    box-shadow 0.15s;
+}
+
+.submitBtn:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(15, 108, 189, 0.35);
+}
+
+.submitBtn:disabled {
+  opacity: 0.88;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btnSpinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

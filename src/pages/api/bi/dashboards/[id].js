@@ -16,7 +16,12 @@ export default async function handler(req, res) {
 
   try {
     const url = `${getBackendUrl()}/api/v1/dashboards/${id}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: req.headers.cookie ? { cookie: req.headers.cookie } : {},
+    });
+    if (response.status === 401) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     if (response.status === 404) {
       return res.status(404).json({ error: 'Dashboard not found' });
     }

@@ -78,9 +78,36 @@ export default function SharedDashboardPage() {
   const dispatch = useDispatch();
   const [status, setStatus] = useState('loading'); // 'loading' | 'ready' | 'error' | 'notfound'
   const [errorMessage, setErrorMessage] = useState('');
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    fetch('/api/auth/me')
+      .then((r) => {
+        if (r.status === 401) {
+          router.replace(
+            `/login?redirect=${encodeURIComponent(`/dashboard/${id}`)}`
+          );
+          return null;
+        }
+        return r.ok ? r.json() : null;
+      })
+      .then((me) => {
+        if (!cancelled && me) setAuthed(true);
+      })
+      .catch(() => {
+        router.replace(
+          `/login?redirect=${encodeURIComponent(`/dashboard/${id}`)}`
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, router]);
+
+  useEffect(() => {
+    if (!id || !authed) return;
 
     let cancelled = false;
 
@@ -115,6 +142,17 @@ export default function SharedDashboardPage() {
             collection: collection || '',
           })
         );
+        try {
+          localStorage.setItem(
+            'powerbi-active-dashboard-meta',
+            JSON.stringify({
+              id: String(id),
+              effectiveRole: data?.effectiveRole || null,
+            })
+          );
+        } catch {
+          /* ignore */
+        }
         setStatus('ready');
       })
       .catch((err) => {
@@ -127,7 +165,7 @@ export default function SharedDashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, dispatch]);
+  }, [id, authed, dispatch]);
 
   // Still loading or waiting for id
   if (!id || status === 'loading') {

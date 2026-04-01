@@ -23,9 +23,57 @@ import ViewDataModal from './ViewDataModal';
 // import Copilot from './Copilot';
 import styles from './BiDashboard.module.css';
 import DashboardToolbar from './DashboardToolbar';
+import ProfileBar from './ProfileBar';
+import ShareDashboardModal from './ShareDashboardModal';
 
 const STORAGE_KEY = 'powerbi-dashboard';
 const RECENT_DASHBOARDS_STORAGE_KEY = 'powerbi-recent-dashboard-ids';
+const LAST_SAVED_HASH_KEY = 'powerbi-last-saved-hash';
+
+function stableStringify(value) {
+  const seen = new WeakSet();
+  return JSON.stringify(value, (key, val) => {
+    if (val && typeof val === 'object') {
+      if (seen.has(val)) return undefined;
+      seen.add(val);
+      if (Array.isArray(val)) return val;
+      return Object.keys(val)
+        .sort()
+        .reduce((acc, k) => {
+          acc[k] = val[k];
+          return acc;
+        }, {});
+    }
+    return val;
+  });
+}
+
+function sanitizeChartsForSave(charts) {
+  if (!Array.isArray(charts)) return [];
+  return charts.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    // Remove UI-only / volatile fields so they don't trigger "changes"
+    // eslint-disable-next-line no-unused-vars
+    const { refreshedAt: _refreshedAt, ...rest } = c;
+    return rest;
+  });
+}
+
+function buildDashboardSavePayload({
+  name,
+  collection,
+  charts,
+  layouts,
+  logo,
+}) {
+  return {
+    name: String(name || '').trim() || 'My Dashboard',
+    collection: String(collection || ''),
+    charts: sanitizeChartsForSave(charts),
+    layouts: layouts || {},
+    logo: logo || undefined,
+  };
+}
 
 function readRecentDashboardIds() {
   if (typeof window === 'undefined') return [];
@@ -115,11 +163,25 @@ const BiDashboard = () => {
   const [fields, setFields] = useState([]);
   const [recordCount, setRecordCount] = useState(null);
   const [saveStatus, setSaveStatus] = useState('');
+  const [me, setMe] = useState(null);
+  const [meLoading, setMeLoading] = useState(true);
   const [collectionInput, setCollectionInput] = useState(collection);
   const [shareUrl, setShareUrl] = useState('');
+  const [dashboardServerId, setDashboardServerId] = useState(null);
+  const [dashboardEffectiveRole, setDashboardEffectiveRole] = useState(null); // 'Viewer' | 'Editor'
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [lastSavedHash, setLastSavedHash] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return String(localStorage.getItem(LAST_SAVED_HASH_KEY) || '');
+    } catch {
+      return '';
+    }
+  });
   const [chartToDeleteId, setChartToDeleteId] = useState(null);
   const [exportPdfInProgress, setExportPdfInProgress] = useState(false);
   const [viewDataOpen, setViewDataOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [dashboardName, setDashboardName] = useState('');
   const [savedDashboards, setSavedDashboards] = useState([]);
   const [recentDashboardIds, setRecentDashboardIds] = useState([]);
@@ -165,7 +227,45 @@ const BiDashboard = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled) setMe(data);
+      })
+      .catch(() => {
+        if (!cancelled) setMe(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMeLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     setRecentDashboardIds(readRecentDashboardIds());
+  }, []);
+
+  // If user opened a shared dashboard link (email), persist effectiveRole in localStorage
+  // so the UI can enable editor actions correctly.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('powerbi-active-dashboard-meta');
+      if (!raw) return;
+      const meta = JSON.parse(raw);
+      if (!meta?.id) return;
+
+      const dashId = String(meta.id);
+      setDashboardServerId(dashId);
+      setDashboardEffectiveRole(meta?.effectiveRole || null);
+      const base = window.location.origin;
+      setShareUrl(`${base}/dashboard/${dashId}`);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   // Global mouse handlers for sidebar resize
@@ -541,6 +641,22 @@ const BiDashboard = () => {
     [dispatch]
   );
 
+  const performLogout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // ignore network failures and still navigate to login
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.location.assign('/login');
+      }
+    }
+  }, []);
+
+  const handleLogoutClick = useCallback(() => {
+    setLogoutConfirmOpen(true);
+  }, []);
+
   const handleSelectChart = useCallback(
     (id) => {
       dispatch(setSelectedChart(id));
@@ -549,18 +665,34 @@ const BiDashboard = () => {
   );
 
   const handleSaveDashboard = useCallback(async () => {
+    const name = (dashboardName && dashboardName.trim()) || 'My Dashboard';
+    const payloadForCompare = buildDashboardSavePayload({
+      name,
+      collection,
+      charts,
+      layouts,
+      logo: dashboardLogo,
+    });
+    const nextHash = stableStringify(payloadForCompare);
+
+    if (lastSavedHash && nextHash === lastSavedHash) {
+      setSaveStatus('No changes to save');
+      setTimeout(() => setSaveStatus(''), 2000);
+      return;
+    }
+
     setSaveStatus('Saving...');
     setShareUrl('');
-    const name = (dashboardName && dashboardName.trim()) || 'My Dashboard';
+    setDashboardServerId(null);
+    setDashboardEffectiveRole(null);
     try {
       const res = await fetch('/api/bi/dashboards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name,
-          charts,
-          layouts,
-          logo: dashboardLogo || undefined,
+          ...payloadForCompare,
+          // server doesn't need collection currently, but harmless to send
+          updatedAt: new Date().toISOString(),
         }),
       });
       if (res.ok) {
@@ -582,13 +714,23 @@ const BiDashboard = () => {
             setSaveStatus('Saved');
             const base =
               typeof window !== 'undefined' ? window.location.origin : '';
+            setDashboardServerId(id);
+            setDashboardEffectiveRole('Editor');
             setShareUrl(`${base}/dashboard/${id}`);
             fetch('/api/bi/dashboards')
               .then((r) => r.json())
               .then((list) =>
                 setSavedDashboards(Array.isArray(list) ? list : [])
               );
+            setLastSavedHash(nextHash);
+            try {
+              localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
+            } catch {
+              /* ignore */
+            }
           } else {
+            setDashboardServerId(null);
+            setDashboardEffectiveRole(null);
             localStorage.setItem(
               STORAGE_KEY,
               JSON.stringify({
@@ -599,8 +741,16 @@ const BiDashboard = () => {
               })
             );
             setSaveStatus('Saved (local)');
+            setLastSavedHash(nextHash);
+            try {
+              localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
+            } catch {
+              /* ignore */
+            }
           }
         } catch {
+          setDashboardServerId(null);
+          setDashboardEffectiveRole(null);
           localStorage.setItem(
             STORAGE_KEY,
             JSON.stringify({
@@ -611,8 +761,16 @@ const BiDashboard = () => {
             })
           );
           setSaveStatus('Saved (local)');
+          setLastSavedHash(nextHash);
+          try {
+            localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
+          } catch {
+            /* ignore */
+          }
         }
       } else {
+        setDashboardServerId(null);
+        setDashboardEffectiveRole(null);
         localStorage.setItem(
           STORAGE_KEY,
           JSON.stringify({
@@ -623,8 +781,16 @@ const BiDashboard = () => {
           })
         );
         setSaveStatus('Saved (local)');
+        setLastSavedHash(nextHash);
+        try {
+          localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
+        } catch {
+          /* ignore */
+        }
       }
     } catch {
+      setDashboardServerId(null);
+      setDashboardEffectiveRole(null);
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
@@ -635,19 +801,37 @@ const BiDashboard = () => {
         })
       );
       setSaveStatus('Saved (local)');
+      setLastSavedHash(nextHash);
+      try {
+        localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
+      } catch {
+        /* ignore */
+      }
     }
     setTimeout(() => setSaveStatus(''), 2000);
-  }, [charts, layouts, collection, dashboardName, dashboardLogo]);
+  }, [
+    charts,
+    layouts,
+    collection,
+    dashboardName,
+    dashboardLogo,
+    lastSavedHash,
+  ]);
 
   const handleShare = useCallback(() => {
-    if (shareUrl && navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(shareUrl);
-      setSaveStatus('Link copied to clipboard');
+    if (!dashboardServerId) return;
+    if (dashboardEffectiveRole !== 'Editor') {
+      setSaveStatus('Only editors can share');
       setTimeout(() => setSaveStatus(''), 2000);
+      return;
     }
-  }, [shareUrl]);
+    setShareModalOpen(true);
+  }, [dashboardServerId, dashboardEffectiveRole]);
 
   const handleLoadDashboard = useCallback(() => {
+    setDashboardServerId(null);
+    setDashboardEffectiveRole(null);
+    setShareUrl('');
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
@@ -728,6 +912,20 @@ const BiDashboard = () => {
           if (parsed.logo != null && typeof parsed.logo === 'string')
             setDashboardLogo(parsed.logo);
           else setDashboardLogo(null);
+          try {
+            const payloadForCompare = buildDashboardSavePayload({
+              name: parsed.dashboardName || 'My Dashboard',
+              collection: loadedCollection,
+              charts: chartsWithIds,
+              layouts: validLayouts,
+              logo: parsed.logo,
+            });
+            const h = stableStringify(payloadForCompare);
+            setLastSavedHash(h);
+            localStorage.setItem(LAST_SAVED_HASH_KEY, h);
+          } catch {
+            /* ignore */
+          }
           setSaveStatus('Loaded');
           setTimeout(() => setSaveStatus(''), 2000);
         }
@@ -741,6 +939,14 @@ const BiDashboard = () => {
         .then((list) => {
           if (list?.length) {
             const latest = list[list.length - 1];
+            const latestId = latest?._id || latest?.id;
+            if (latestId) {
+              setDashboardServerId(String(latestId));
+              setDashboardEffectiveRole(latest?.effectiveRole || null);
+              const base =
+                typeof window !== 'undefined' ? window.location.origin : '';
+              setShareUrl(`${base}/dashboard/${latestId}`);
+            }
             const cfg = latest?.charts ?? latest;
             if (Array.isArray(cfg) && cfg.length) {
               // Generate proper layouts
@@ -805,6 +1011,20 @@ const BiDashboard = () => {
                 })
               );
               setCollectionInput(loadedCollection);
+              try {
+                const payloadForCompare = buildDashboardSavePayload({
+                  name: latest?.name || 'My Dashboard',
+                  collection: loadedCollection,
+                  charts: chartsWithIds,
+                  layouts: validLayouts,
+                  logo: latest?.logo,
+                });
+                const h = stableStringify(payloadForCompare);
+                setLastSavedHash(h);
+                localStorage.setItem(LAST_SAVED_HASH_KEY, h);
+              } catch {
+                /* ignore */
+              }
               setSaveStatus('Loaded from server');
             } else {
               setSaveStatus('No saved dashboard');
@@ -872,6 +1092,25 @@ const BiDashboard = () => {
             })
           );
           setCollectionInput(loadedCollection);
+          setDashboardServerId(String(id));
+          setDashboardEffectiveRole(data?.effectiveRole || null);
+          const base =
+            typeof window !== 'undefined' ? window.location.origin : '';
+          setShareUrl(`${base}/dashboard/${id}`);
+          try {
+            const payloadForCompare = buildDashboardSavePayload({
+              name: data?.name || 'My Dashboard',
+              collection: loadedCollection,
+              charts: chartsWithIds,
+              layouts: validLayouts,
+              logo: data?.logo,
+            });
+            const h = stableStringify(payloadForCompare);
+            setLastSavedHash(h);
+            localStorage.setItem(LAST_SAVED_HASH_KEY, h);
+          } catch {
+            /* ignore */
+          }
           if (data.name) setDashboardName(data.name);
           if (data.logo != null && typeof data.logo === 'string')
             setDashboardLogo(data.logo);
@@ -1968,7 +2207,14 @@ const BiDashboard = () => {
           <h1 className={styles.biAppTitle}>Power BI Lite</h1>
         </div>
         <div className={styles.biHeaderRight}>
-          {/* Optional: Add user profile or other header actions here */}
+          <ProfileBar
+            user={me}
+            loading={meLoading}
+            dashboardLogo={dashboardLogo}
+            onSetDashboardImage={() => logoInputRef.current?.click()}
+            onClearDashboardImage={() => setDashboardLogo(null)}
+            onLogoutClick={handleLogoutClick}
+          />
         </div>
       </header>
 
@@ -1983,6 +2229,7 @@ const BiDashboard = () => {
         onLoad={handleLoadDashboard}
         onShare={handleShare}
         shareUrl={shareUrl}
+        shareDisabled={dashboardEffectiveRole !== 'Editor'}
         saveStatus={saveStatus}
         fileInputRef={fileInputRef}
         recordCount={recordCount}
@@ -1993,9 +2240,6 @@ const BiDashboard = () => {
         savedDashboards={savedDashboards}
         recentDashboardIds={recentDashboardIds}
         onLoadDashboardById={handleLoadDashboardById}
-        dashboardLogo={dashboardLogo}
-        onSetLogo={() => logoInputRef.current?.click()}
-        onClearLogo={() => setDashboardLogo(null)}
         dataFilter={dataFilter}
         onDataFilterChange={setDataFilter}
         dateFields={fields.filter(
@@ -2179,6 +2423,97 @@ const BiDashboard = () => {
                 }}
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ShareDashboardModal
+        open={shareModalOpen}
+        dashboardId={dashboardServerId}
+        onClose={() => setShareModalOpen(false)}
+        onShared={() => {
+          setSaveStatus('Dashboard shared successfully');
+          setTimeout(() => setSaveStatus(''), 2000);
+        }}
+      />
+
+      {logoutConfirmOpen && (
+        <div
+          className={styles.deleteModalOverlay}
+          role='dialog'
+          aria-modal='true'
+          aria-labelledby='logout-confirm-title'
+          onClick={() => setLogoutConfirmOpen(false)}
+          onKeyDown={(e) => e.key === 'Escape' && setLogoutConfirmOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+          }}
+        >
+          <div
+            className={styles.deleteModal}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: 12,
+              padding: 24,
+              maxWidth: 400,
+              width: '90%',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            }}
+          >
+            <h3
+              id='logout-confirm-title'
+              style={{ margin: '0 0 12px', fontSize: 18, fontWeight: 600 }}
+            >
+              Log out
+            </h3>
+            <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: 14 }}>
+              Are you sure you want to log out?
+            </p>
+            <div
+              style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}
+            >
+              <button
+                type='button'
+                onClick={() => setLogoutConfirmOpen(false)}
+                style={{
+                  padding: '8px 16px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 8,
+                  background: '#fff',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 500,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type='button'
+                onClick={() => {
+                  setLogoutConfirmOpen(false);
+                  performLogout();
+                }}
+                style={{
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: 8,
+                  background: '#0f6cbd',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 500,
+                }}
+              >
+                Log out
               </button>
             </div>
           </div>
