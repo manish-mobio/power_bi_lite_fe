@@ -20,7 +20,6 @@ import {
   AiOutlineShareAlt,
   AiOutlineDown,
   AiOutlineTable,
-  AiOutlinePicture,
   AiOutlineFilter,
   AiOutlineExpand,
   AiOutlineCompress,
@@ -204,6 +203,7 @@ const DashboardToolbar = ({
   onLoad,
   onShare,
   shareUrl,
+  shareDisabled,
   saveStatus,
   fileInputRef,
   recordCount,
@@ -213,9 +213,6 @@ const DashboardToolbar = ({
   savedDashboards,
   recentDashboardIds = [],
   onLoadDashboardById,
-  dashboardLogo,
-  onSetLogo,
-  onClearLogo,
   dataFilter,
   onDataFilterChange,
   dateFields = [],
@@ -368,11 +365,6 @@ const DashboardToolbar = ({
     [onLoadDashboardById]
   );
 
-  const handleLoadFromBrowserOrLatest = useCallback(() => {
-    onLoad();
-    setLoadModalOpen(false);
-  }, [onLoad]);
-
   // Fetch collections list on mount
   useEffect(() => {
     let cancelled = false;
@@ -460,7 +452,6 @@ const DashboardToolbar = ({
   return (
     <header className={`${styles.toolbar} bi-dashboard-toolbar`} role='banner'>
       <div className={styles.toolbarLeft}>
-        <h1 className={styles.toolbarTitle}>Power BI Lite</h1>
         <div className={styles.collectionWrap}>
           <label
             htmlFor='bi-toolbar-collection'
@@ -565,34 +556,6 @@ const DashboardToolbar = ({
             >
               Export PDF
             </button>
-            {onSetLogo && (
-              <button
-                type='button'
-                className={styles.dropdownItem}
-                onClick={() => {
-                  onSetLogo();
-                }}
-                role='menuitem'
-              >
-                <AiOutlinePicture
-                  style={{ marginRight: 6, verticalAlign: 'middle' }}
-                  aria-hidden
-                />
-                Set dashboard logo
-              </button>
-            )}
-            {onClearLogo && dashboardLogo && (
-              <button
-                type='button'
-                className={styles.dropdownItem}
-                onClick={() => {
-                  onClearLogo();
-                }}
-                role='menuitem'
-              >
-                Clear logo
-              </button>
-            )}
           </ToolbarDropdown>
         </div>
 
@@ -862,7 +825,7 @@ const DashboardToolbar = ({
                           </div>
                         </div>
                       )}
-                      <div className={styles.loadModalFooter}>
+                      {/* <div className={styles.loadModalFooter}>
                         <button
                           type='button'
                           className={styles.loadModalFooterBtn}
@@ -870,7 +833,7 @@ const DashboardToolbar = ({
                         >
                           Load from this browser or latest on server
                         </button>
-                      </div>
+                      </div> */}
                     </div>
                   </div>,
                   document.body
@@ -892,9 +855,13 @@ const DashboardToolbar = ({
               icon={AiOutlineShareAlt}
               label='Share'
               onClick={onShare}
-              disabled={!shareUrl}
+              disabled={!shareUrl || shareDisabled}
               title={
-                shareUrl ? 'Copy share link' : 'Save dashboard first to share'
+                shareDisabled
+                  ? 'Only editors can share'
+                  : shareUrl
+                    ? 'Share dashboard with users'
+                    : 'Save dashboard first to share'
               }
             />
           </div>
@@ -907,17 +874,7 @@ const DashboardToolbar = ({
         )}
       </div>
 
-      {shareUrl && (
-        <div className={styles.shareUrlWrap}>
-          <input
-            type='text'
-            readOnly
-            value={shareUrl}
-            className={styles.shareUrlInput}
-            aria-label='Shareable dashboard URL'
-          />
-        </div>
-      )}
+      {/* shareUrl is used only to enable/disable the Share action */}
     </header>
   );
 };
@@ -933,6 +890,7 @@ DashboardToolbar.propTypes = {
   onLoad: PropTypes.func.isRequired,
   onShare: PropTypes.func,
   shareUrl: PropTypes.string,
+  shareDisabled: PropTypes.bool,
   saveStatus: PropTypes.string,
   fileInputRef: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
   recordCount: PropTypes.number,
@@ -942,9 +900,6 @@ DashboardToolbar.propTypes = {
   savedDashboards: PropTypes.array,
   recentDashboardIds: PropTypes.arrayOf(PropTypes.string),
   onLoadDashboardById: PropTypes.func,
-  dashboardLogo: PropTypes.string,
-  onSetLogo: PropTypes.func,
-  onClearLogo: PropTypes.func,
   dataFilter: PropTypes.shape({
     field: PropTypes.string,
     type: PropTypes.oneOf(['date', 'month', 'quarter', 'year']),
