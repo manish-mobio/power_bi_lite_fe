@@ -2,43 +2,53 @@
  * Power BI Lite - Analytical Query API
  * Fetches data from backend, runs aggregation, returns ECharts format
  */
+import axios from 'axios';
+import { API_MSG, FORMAT_BACKEND_ERROR_STATUS } from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import { ApiVersion } from '@/utils/constants';
+import { getBackendBaseUrl } from '@/services/http/backendClient';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res
+      .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
+      .json({ error: API_MSG.METHOD_NOT_ALLOWED });
   }
 
   try {
     const config = req.body;
     if (!config || !config.collection) {
-      return res.status(400).json({
-        error: 'Invalid config: requires collection',
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        error: API_MSG.INVALID_CONFIG_COLLECTION,
       });
     }
 
     const isTable = config.type === 'table';
     if (!isTable && (!config.dimension || !config.measure)) {
-      return res.status(400).json({
-        error: 'Invalid config: non-table charts require dimension and measure',
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        error: API_MSG.INVALID_CONFIG_CHART_FIELDS,
       });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    let apiPath = `${baseUrl}/api/v1/collection/${config.collection}`;
+    let apiPath = `${getBackendBaseUrl}${ApiVersion}/collection/${config.collection}`;
     let url = `${apiPath}?limit=${config.limit || 1000}`;
 
-    let response = await fetch(url);
-    if (!response.ok && response.status === 404) {
+    let response = await axios.get(url, { validateStatus: () => true });
+    if (
+      !isHttpSuccessStatus(response.status) &&
+      response.status === HTTP_STATUS.NOT_FOUND
+    ) {
       apiPath = config.collection
-        ? `${baseUrl}/api/v1/${config.collection}`
-        : `${baseUrl}/api/v1`;
+        ? `${getBackendBaseUrl}${ApiVersion}/${config.collection}`
+        : `${getBackendBaseUrl}${ApiVersion}`;
       url = `${apiPath}?limit=${config.limit || 1000}`;
-      response = await fetch(url);
+      response = await axios.get(url, { validateStatus: () => true });
     }
-    if (!response.ok) {
-      throw new Error(`Backend error: ${response.status}`);
+    if (!isHttpSuccessStatus(response.status)) {
+      throw new Error(FORMAT_BACKEND_ERROR_STATUS(response.status));
     }
 
-    const data = await response.json();
+    const data = response.data;
     let items = Array.isArray(data) ? data : data?.data || data?.results || [];
     if (!items.length && data && typeof data === 'object') {
       const key = Object.keys(data).find((k) => Array.isArray(data[k]));
@@ -59,17 +69,17 @@ export default async function handler(req, res) {
         config.measure,
         config.limit
       );
-      return res.status(200).json(result);
+      return res.status(HTTP_STATUS.OK).json(result);
     }
 
     const pipeline = generatePipeline(config);
     let result = runAggregation(items, pipeline);
     result = applySort(result, config.sortBy, config.sortOrder);
-    return res.status(200).json(result);
+    return res.status(HTTP_STATUS.OK).json(result);
   } catch (error) {
     console.error('[BI Query Error]', error);
-    return res.status(500).json({
-      error: 'Failed to execute query',
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: API_MSG.FAILED_EXECUTE_QUERY,
       details: error.message,
     });
   }

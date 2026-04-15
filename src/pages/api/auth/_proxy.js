@@ -1,25 +1,28 @@
-const getBackendUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import axios from 'axios';
+import { getBackendBaseUrl } from '@/services/http/backendClient';
 
 export async function proxyToBackend(req, res, { path, method }) {
-  const url = `${getBackendUrl()}${path}`;
+  const url = `${getBackendBaseUrl}${path}`;
   const headers = {
     'Content-Type': 'application/json',
     ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
   };
 
-  const upstream = await fetch(url, {
+  const upstream = await axios.request({
+    url,
     method,
     headers,
-    body: method === 'GET' ? undefined : JSON.stringify(req.body || {}),
+    data: method === 'GET' ? undefined : req.body || {},
+    responseType: 'text',
+    validateStatus: () => true,
   });
 
-  const setCookie = upstream.headers.get('set-cookie');
+  const setCookie = upstream.headers['set-cookie'];
   if (setCookie) {
     res.setHeader('Set-Cookie', setCookie);
   }
 
-  const text = await upstream.text();
+  const text = upstream.data;
   let json = null;
   try {
     json = text ? JSON.parse(text) : null;

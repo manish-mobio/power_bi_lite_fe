@@ -12,33 +12,9 @@ import React, {
 } from 'react';
 import PropTypes from 'prop-types';
 import ReactECharts from 'echarts-for-react';
-
-const COLOR_THEMES = {
-  default: {
-    name: 'Default',
-    colors: ['#3b82f6', '#10b981', '#f97316', '#ef4444', '#8b5cf6', '#06b6d4'],
-    backgroundColor: '#f9fafb',
-    axisLabelColor: '#374151',
-  },
-  pastel: {
-    name: 'Pastel',
-    colors: ['#60a5fa', '#a5b4fc', '#f9a8d4', '#facc15', '#34d399', '#fb923c'],
-    backgroundColor: '#fdf2f8',
-    axisLabelColor: '#4b5563',
-  },
-  dark: {
-    name: 'Dark',
-    colors: ['#f97316', '#22c55e', '#38bdf8', '#e5e7eb', '#a855f7', '#facc15'],
-    backgroundColor: '#020617',
-    axisLabelColor: '#e5e7eb',
-  },
-  ocean: {
-    name: 'Ocean',
-    colors: ['#0ea5e9', '#22c55e', '#6366f1', '#14b8a6', '#38bdf8', '#1d4ed8'],
-    backgroundColor: '#0f172a',
-    axisLabelColor: '#e0f2fe',
-  },
-};
+import { CHART_UI } from '@/utils/messages';
+import { postBiQuery } from '@/services/biService';
+import { COLOR_THEMES } from '@/utils/colors';
 
 const SmartChart = ({
   config,
@@ -81,12 +57,8 @@ const SmartChart = ({
       sortOrder: config.sortOrder,
       filter: globalFilter || undefined,
     };
-    fetch('/api/bi/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then((res) => res.json())
+    postBiQuery(body)
+      .then((res) => res.data)
       .then((result) => {
         if (cancelled) return;
         if (Array.isArray(result)) {
@@ -100,7 +72,7 @@ const SmartChart = ({
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err.message || 'Failed to fetch');
+          setError(err.message || CHART_UI.FAILED_TO_FETCH);
           setData([]);
         }
       })
@@ -975,7 +947,7 @@ const SmartChart = ({
         {loading && <div className='bi-chart-loading'>Loading...</div>}
         {error && <div className='bi-chart-error'>{error}</div>}
         {!loading && !error && data?.length === 0 && (
-          <div className='bi-chart-empty'>No data available</div>
+          <div className='bi-chart-empty'>No data available1</div>
         )}
         {!loading && !error && isCard && data?.length > 0 && (
           <div

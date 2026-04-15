@@ -2,28 +2,36 @@
  * Power BI Lite - Dashboard Persistence API
  * Saves/loads ChartConfig array to backend (dashboards collection)
  */
-const getBackendUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import axios from 'axios';
+import { API_MSG, FORMAT_BACKEND_ERROR_STATUS } from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import { ApiVersion } from '@/utils/constants';
+import { getBackendBaseUrl } from '@/services/http/backendClient';
 
-const DASHBOARDS_ENDPOINT = () => `${getBackendUrl()}/api/v1/dashboards`;
+const DASHBOARDS_ENDPOINT = () =>
+  `${getBackendBaseUrl}${ApiVersion}/dashboards`;
 
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     try {
-      const response = await fetch(DASHBOARDS_ENDPOINT(), {
+      const response = await axios.get(DASHBOARDS_ENDPOINT(), {
         headers: req.headers.cookie ? { cookie: req.headers.cookie } : {},
+        validateStatus: () => true,
       });
-      if (response.status === 401)
-        return res.status(401).json({ error: 'Unauthorized' });
-      if (!response.ok) return res.status(200).json([]);
-      const data = await response.json();
+      if (response.status === HTTP_STATUS.UNAUTHORIZED)
+        return res
+          .status(HTTP_STATUS.UNAUTHORIZED)
+          .json({ error: API_MSG.UNAUTHORIZED });
+      if (!isHttpSuccessStatus(response.status))
+        return res.status(HTTP_STATUS.OK).json([]);
+      const data = response.data;
       const list = Array.isArray(data)
         ? data
         : data?.data ?? data?.dashboards ?? [];
-      return res.status(200).json(list);
+      return res.status(HTTP_STATUS.OK).json(list);
     } catch (error) {
       console.error('[BI Dashboards GET]', error);
-      return res.status(200).json([]);
+      return res.status(HTTP_STATUS.OK).json([]);
     }
   }
 
@@ -40,25 +48,31 @@ export default async function handler(req, res) {
         updatedAt: new Date().toISOString(),
       };
 
-      const response = await fetch(DASHBOARDS_ENDPOINT(), {
-        method: 'POST',
+      const response = await axios.post(DASHBOARDS_ENDPOINT(), payload, {
         headers: {
           'Content-Type': 'application/json',
           ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
         },
-        body: JSON.stringify(payload),
+        validateStatus: () => true,
       });
 
-      if (response.status === 401)
-        return res.status(401).json({ error: 'Unauthorized' });
-      if (!response.ok) throw new Error(`Backend error: ${response.status}`);
-      const result = await response.json();
-      return res.status(200).json(result);
+      if (response.status === HTTP_STATUS.UNAUTHORIZED)
+        return res
+          .status(HTTP_STATUS.UNAUTHORIZED)
+          .json({ error: API_MSG.UNAUTHORIZED });
+      if (!isHttpSuccessStatus(response.status))
+        throw new Error(FORMAT_BACKEND_ERROR_STATUS(response.status));
+      const result = response.data;
+      return res.status(HTTP_STATUS.OK).json(result);
     } catch (error) {
       console.error('[BI Dashboards POST]', error);
-      return res.status(500).json({ error: error.message });
+      return res
+        .status(HTTP_STATUS.INTERNAL_SERVER_ERROR)
+        .json({ error: error.message });
     }
   }
 
-  return res.status(405).json({ error: 'Method not allowed' });
+  return res
+    .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
+    .json({ error: API_MSG.METHOD_NOT_ALLOWED });
 }

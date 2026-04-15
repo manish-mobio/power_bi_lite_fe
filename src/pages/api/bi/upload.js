@@ -1,9 +1,13 @@
 /**
  * Power BI Lite - File Upload API
- * Proxies file upload to backend /api/v1/upload endpoint
+ * Proxies file upload to backend upload endpoint (see ApiVersion).
  */
-const getBackendUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import axios from 'axios';
+import { API_MSG, FORMAT_BACKEND_ERROR_STATUS } from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import { ApiVersion } from '@/utils/constants';
+import { getBackendBaseUrl } from '@/services/http/backendClient';
+
 export const config = {
   api: {
     bodyParser: {
@@ -12,53 +16,53 @@ export const config = {
   },
 };
 export default async function handler(req, res) {
-  console.log('upload file log by manish::0000');
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res
+      .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
+      .json({ error: API_MSG.METHOD_NOT_ALLOWED });
   }
 
   try {
     const { fileName, fileContent, fileType, collectionName } = req.body;
-    console.log(
-      'upload file log by manish::',
-      fileName,
-      fileContent,
-      '+s',
-      fileType,
-      collectionName
-    );
 
     if (!fileContent) {
-      return res.status(400).json({ error: 'File content is required' });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ error: API_MSG.FILE_CONTENT_REQUIRED });
     }
 
-    const backendUrl = `${getBackendUrl()}/api/v1/upload`;
-    const response = await fetch(backendUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const backendUrl = `${getBackendBaseUrl}${ApiVersion}/upload`;
+    const response = await axios.post(
+      backendUrl,
+      {
         fileName,
         fileContent,
         fileType,
         collectionName,
-      }),
-    });
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        validateStatus: () => true,
+      }
+    );
 
-    if (!response.ok) {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: `Backend error: ${response.status}` }));
+    if (!isHttpSuccessStatus(response.status)) {
+      const errorData =
+        response.data &&
+        typeof response.data === 'object' &&
+        !Array.isArray(response.data)
+          ? response.data
+          : { error: FORMAT_BACKEND_ERROR_STATUS(response.status) };
       return res.status(response.status).json(errorData);
     }
 
-    const result = await response.json();
-    console.log('to check count log of result::', result);
+    const result = response.data;
 
-    return res.status(200).json(result);
+    return res.status(HTTP_STATUS.OK).json(result);
   } catch (error) {
     console.error('[BI Upload Error]', error);
-    return res.status(500).json({
-      error: 'Failed to upload file',
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: API_MSG.FAILED_UPLOAD_FILE,
       details: error.message,
     });
   }

@@ -5,7 +5,7 @@ import { ApiVersion } from '@/utils/constants';
 import { getBackendBaseUrl } from '@/services/http/backendClient';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (req.method !== 'GET') {
     return res
       .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
       .json({ error: API_MSG.METHOD_NOT_ALLOWED });
@@ -17,14 +17,11 @@ export default async function handler(req, res) {
       .status(HTTP_STATUS.BAD_REQUEST)
       .json({ error: API_MSG.DASHBOARD_ID_REQUIRED });
   }
-  try {
-    const url = `${getBackendBaseUrl}${ApiVersion}/dashboards/${id}/share`;
 
-    const upstream = await axios.post(url, req.body || {}, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
-      },
+  try {
+    const url = `${getBackendBaseUrl}${ApiVersion}/dashboards/${encodeURIComponent(id)}/versions`;
+    const upstream = await axios.get(url, {
+      headers: req.headers.cookie ? { cookie: req.headers.cookie } : {},
       responseType: 'text',
       validateStatus: () => true,
     });
@@ -32,15 +29,15 @@ export default async function handler(req, res) {
     const text = upstream.data;
     let json = null;
     try {
-      json = text ? JSON.parse(text) : null;
+      json = text ? JSON.parse(text) : [];
     } catch {
-      json = text;
+      json = [];
     }
 
-    res.status(upstream.status).json(json ?? {});
+    return res.status(upstream.status).json(Array.isArray(json) ? json : []);
   } catch (e) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      error: e.message || API_MSG.SHARE_FAILED,
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: e.message || API_MSG.REQUEST_FAILED,
     });
   }
 }

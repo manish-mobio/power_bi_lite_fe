@@ -26,11 +26,13 @@ import {
   AiOutlineClose,
   AiOutlineSearch,
 } from 'react-icons/ai';
+import { getBiCollections } from '@/services/biService';
 import styles from './DashboardToolbar.module.css';
-
-const LOAD_ROW_HEIGHT = 56;
-const LOAD_LIST_VIEWPORT = 300;
-const LOAD_LIST_OVERSCAN = 6;
+import {
+  LOAD_LIST_OVERSCAN,
+  LOAD_LIST_VIEWPORT,
+  LOAD_ROW_HEIGHT,
+} from '@/utils/constants';
 
 function LoadDashboardVirtualList({ items, recentIdsSet, onSelectRow }) {
   const [scrollTop, setScrollTop] = useState(0);
@@ -370,8 +372,8 @@ const DashboardToolbar = ({
     let cancelled = false;
     setLoadingCollections(true);
 
-    fetch('/api/bi/collections')
-      .then((res) => res.json())
+    getBiCollections()
+      .then((res) => res.data)
       .then((data) => {
         if (!cancelled) {
           setCollections(Array.isArray(data) ? data : []);

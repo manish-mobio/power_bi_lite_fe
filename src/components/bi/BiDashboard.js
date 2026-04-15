@@ -14,7 +14,8 @@ import {
   loadDashboard,
   setLayouts,
   updateChartLayout,
-} from '@/store/reducers/dashboardReducer';
+} from '@/store/actions/dashboardActions';
+const dashboardUtils = require('@/utils/dashboard');
 import { AiOutlineExpand, AiOutlineCompress } from 'react-icons/ai';
 import FieldList from './FieldList';
 import ChartCanvas from './ChartCanvas';
@@ -25,135 +26,29 @@ import styles from './BiDashboard.module.css';
 import DashboardToolbar from './DashboardToolbar';
 import ProfileBar from './ProfileBar';
 import ShareDashboardModal from './ShareDashboardModal';
-
-const STORAGE_KEY = 'powerbi-dashboard';
-const RECENT_DASHBOARDS_STORAGE_KEY = 'powerbi-recent-dashboard-ids';
-const LAST_SAVED_HASH_KEY = 'powerbi-last-saved-hash';
-
-function stableStringify(value) {
-  const seen = new WeakSet();
-  return JSON.stringify(value, (key, val) => {
-    if (val && typeof val === 'object') {
-      if (seen.has(val)) return undefined;
-      seen.add(val);
-      if (Array.isArray(val)) return val;
-      return Object.keys(val)
-        .sort()
-        .reduce((acc, k) => {
-          acc[k] = val[k];
-          return acc;
-        }, {});
-    }
-    return val;
-  });
-}
-
-function sanitizeChartsForSave(charts) {
-  if (!Array.isArray(charts)) return [];
-  return charts.map((c) => {
-    if (!c || typeof c !== 'object') return c;
-    // Remove UI-only / volatile fields so they don't trigger "changes"
-    // eslint-disable-next-line no-unused-vars
-    const { refreshedAt: _refreshedAt, ...rest } = c;
-    return rest;
-  });
-}
-
-function buildDashboardSavePayload({
-  name,
-  collection,
-  charts,
-  layouts,
-  logo,
-}) {
-  return {
-    name: String(name || '').trim() || 'My Dashboard',
-    collection: String(collection || ''),
-    charts: sanitizeChartsForSave(charts),
-    layouts: layouts || {},
-    logo: logo || undefined,
-  };
-}
-
-function readRecentDashboardIds() {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(RECENT_DASHBOARDS_STORAGE_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(arr)) return [];
-    return arr.map(String);
-  } catch {
-    return [];
-  }
-}
-
-function buildLayoutsAndChartsFromSaved(dashboard) {
-  const cfg = dashboard?.charts ?? [];
-  if (!Array.isArray(cfg) || cfg.length === 0) {
-    return { chartsWithIds: [], validLayouts: {}, collection: '' };
-  }
-  const chartIds = cfg.map(
-    (c) =>
-      c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-  );
-  const validLayouts = {};
-  if (dashboard?.layouts?.lg && Array.isArray(dashboard.layouts.lg)) {
-    const savedLg = dashboard.layouts.lg;
-    const hasValidSaved =
-      savedLg.length === chartIds.length &&
-      chartIds.every((id) => savedLg.some((item) => item.i === id));
-    if (hasValidSaved) {
-      validLayouts.lg = savedLg;
-      validLayouts.md =
-        dashboard.layouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
-      validLayouts.sm =
-        dashboard.layouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
-    } else {
-      const items = chartIds.map((id, idx) => ({
-        i: id,
-        x: (idx % 2) * 6,
-        y: Math.floor(idx / 2) * 2,
-        w: 6,
-        h: 2,
-      }));
-      validLayouts.lg = items;
-      validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
-      validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
-    }
-  } else {
-    const items = chartIds.map((id, idx) => ({
-      i: id,
-      x: (idx % 2) * 6,
-      y: Math.floor(idx / 2) * 2,
-      w: 6,
-      h: 2,
-    }));
-    validLayouts.lg = items;
-    validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
-    validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
-  }
-  const chartsWithIds = cfg.map((c, idx) => ({
-    ...c,
-    id: c.id || chartIds[idx],
-  }));
-  const collection =
-    (chartsWithIds[0] && chartsWithIds[0].collection) ||
-    dashboard?.collection ||
-    '';
-  return { chartsWithIds, validLayouts, collection };
-}
-
-/** Strip sort indicator from table header text so PDF shows only column name (e.g. "State Code ▲" → "State Code") */
-function cleanPdfHeaderLabel(str) {
-  if (str == null || typeof str !== 'string') return '';
-  return (
-    str
-      .trim()
-      .replace(/\s*[▲▼↑↓↗↘%²]\s*$/g, '')
-      .replace(/\s+[^\w\s]+$/g, '')
-      .trim() || str.trim()
-  );
-}
+import { meRequest, logoutRequest } from '@/services/authService';
+import {
+  getDashboardsList,
+  saveDashboard,
+  getDashboardById,
+  uploadBiFile,
+} from '@/services/biService';
+import {
+  BI_UI,
+  FORMAT_FAILED_LOAD_BY_ID,
+  FORMAT_PDF_BUILDING_CHARTS,
+  FORMAT_PDF_DOWNLOADED_CHARTS,
+  FORMAT_PDF_DOWNLOADED_RECORDS,
+  FORMAT_UPLOAD_ERROR,
+  FORMAT_UPLOAD_NEW,
+  FORMAT_UPLOAD_REPLACED,
+} from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import {
+  STORAGE_KEY,
+  RECENT_DASHBOARDS_STORAGE_KEY,
+  LAST_SAVED_HASH_KEY,
+} from '@/utils/constants';
 
 const BiDashboard = () => {
   const dispatch = useDispatch();
@@ -201,7 +96,7 @@ const BiDashboard = () => {
   const startRightWidthRef = useRef(rightSidebarWidth);
 
   const selectedChart = charts.find((c) => c.id === selectedChartId);
-
+  console.log('selectedChart STORAGE_KEY', STORAGE_KEY);
   // Keep stable callback identity: ChartItem emits rect changes via an effect,
   // and an unstable onLayoutChange prop can cause a render -> effect -> dispatch loop.
   const handleCanvasLayoutChange = useCallback(
@@ -213,8 +108,8 @@ const BiDashboard = () => {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/bi/dashboards')
-      .then((res) => res.json())
+    getDashboardsList()
+      .then((res) => res.data)
       .then((list) => {
         if (!cancelled) setSavedDashboards(Array.isArray(list) ? list : []);
       })
@@ -228,8 +123,8 @@ const BiDashboard = () => {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/me')
-      .then((r) => (r.ok ? r.json() : null))
+    meRequest()
+      .then((r) => (isHttpSuccessStatus(r.status) ? r.data : null))
       .then((data) => {
         if (!cancelled) setMe(data);
       })
@@ -245,7 +140,7 @@ const BiDashboard = () => {
   }, []);
 
   useEffect(() => {
-    setRecentDashboardIds(readRecentDashboardIds());
+    setRecentDashboardIds(dashboardUtils.readRecentDashboardIds());
   }, []);
 
   // If user opened a shared dashboard link (email), persist effectiveRole in localStorage
@@ -356,12 +251,12 @@ const BiDashboard = () => {
       const isCSV = fileName.endsWith('.csv');
 
       if (!isJSON && !isCSV) {
-        setSaveStatus('Invalid file format. Please upload JSON or CSV file.');
+        setSaveStatus(BI_UI.INVALID_FILE_FORMAT);
         setTimeout(() => setSaveStatus(''), 3000);
         return;
       }
 
-      setSaveStatus('Uploading and parsing file...');
+      setSaveStatus(BI_UI.UPLOADING_FILE);
 
       try {
         const text = await file.text();
@@ -436,7 +331,7 @@ const BiDashboard = () => {
               setDashboardLogo(null);
             }
             if (parsedData.name) setDashboardName(parsedData.name);
-            setSaveStatus('Dashboard loaded successfully');
+            setSaveStatus(BI_UI.DASHBOARD_LOADED_OK);
             setTimeout(() => setSaveStatus(''), 2000);
 
             if (fileInputRef.current) {
@@ -449,21 +344,20 @@ const BiDashboard = () => {
         }
 
         // Upload data file to backend for parsing and storage
-        const response = await fetch('/api/bi/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: file.name,
-            fileContent: text,
-            fileType: isJSON ? 'json' : 'csv',
-          }),
+        const response = await uploadBiFile({
+          fileName: file.name,
+          fileContent: text,
+          fileType: isJSON ? 'json' : 'csv',
         });
 
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ error: 'Upload failed' }));
-          setSaveStatus(errorData.error || 'Upload failed');
+        if (!isHttpSuccessStatus(response.status)) {
+          const errorData =
+            response.data &&
+            typeof response.data === 'object' &&
+            !Array.isArray(response.data)
+              ? response.data
+              : { error: BI_UI.UPLOAD_FAILED };
+          setSaveStatus(errorData.error || BI_UI.UPLOAD_FAILED);
           setTimeout(() => setSaveStatus(''), 3000);
           if (fileInputRef.current) {
             fileInputRef.current.value = '';
@@ -471,7 +365,7 @@ const BiDashboard = () => {
           return;
         }
 
-        const result = await response.json();
+        const result = response.data;
 
         // Successfully uploaded - switch to the new collection
         if (result.collection) {
@@ -497,17 +391,17 @@ const BiDashboard = () => {
 
           // Show appropriate message based on whether it was replaced or new
           const statusMsg = result.replaced
-            ? `Replaced "${result.collection}" with ${result.recordCount || 0} records`
-            : `Uploaded ${result.recordCount || 0} records to "${result.collection}"`;
+            ? FORMAT_UPLOAD_REPLACED(result.collection, result.recordCount || 0)
+            : FORMAT_UPLOAD_NEW(result.recordCount || 0, result.collection);
 
           setSaveStatus(statusMsg);
           setTimeout(() => setSaveStatus(''), 3000);
         } else {
-          setSaveStatus('Upload successful, but collection name not returned');
+          setSaveStatus(BI_UI.UPLOAD_NO_COLLECTION);
           setTimeout(() => setSaveStatus(''), 3000);
         }
       } catch (error) {
-        setSaveStatus(`Error uploading file: ${error.message}`);
+        setSaveStatus(FORMAT_UPLOAD_ERROR(error.message));
         setTimeout(() => setSaveStatus(''), 3000);
       } finally {
         // Reset file input
@@ -523,7 +417,7 @@ const BiDashboard = () => {
     ({ dimension, measureField, measureOp }) => {
       // Prevent adding chart if no collection is selected
       if (!collection || !collection.trim()) {
-        setSaveStatus('Please select a collection first');
+        setSaveStatus(BI_UI.SELECT_COLLECTION_FIRST);
         setTimeout(() => setSaveStatus(''), 3000);
         return;
       }
@@ -643,7 +537,7 @@ const BiDashboard = () => {
 
   const performLogout = useCallback(async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await logoutRequest();
     } catch {
       // ignore network failures and still navigate to login
     } finally {
@@ -666,38 +560,34 @@ const BiDashboard = () => {
 
   const handleSaveDashboard = useCallback(async () => {
     const name = (dashboardName && dashboardName.trim()) || 'My Dashboard';
-    const payloadForCompare = buildDashboardSavePayload({
+    const payloadForCompare = dashboardUtils.buildDashboardSavePayload({
       name,
       collection,
       charts,
       layouts,
       logo: dashboardLogo,
     });
-    const nextHash = stableStringify(payloadForCompare);
+    const nextHash = dashboardUtils.stableStringify(payloadForCompare);
 
     if (lastSavedHash && nextHash === lastSavedHash) {
-      setSaveStatus('No changes to save');
+      setSaveStatus(BI_UI.NO_CHANGES_TO_SAVE);
       setTimeout(() => setSaveStatus(''), 2000);
       return;
     }
 
-    setSaveStatus('Saving...');
+    setSaveStatus(BI_UI.SAVING);
     setShareUrl('');
     setDashboardServerId(null);
     setDashboardEffectiveRole(null);
     try {
-      const res = await fetch('/api/bi/dashboards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payloadForCompare,
-          // server doesn't need collection currently, but harmless to send
-          updatedAt: new Date().toISOString(),
-        }),
+      const res = await saveDashboard({
+        ...payloadForCompare,
+        // server doesn't need collection currently, but harmless to send
+        updatedAt: new Date().toISOString(),
       });
-      if (res.ok) {
+      if (isHttpSuccessStatus(res.status)) {
         try {
-          const json = await res.json();
+          const json = res.data;
           const id = json?.id || json?._id;
           if (id) {
             if (json.name) setDashboardName(json.name);
@@ -711,14 +601,14 @@ const BiDashboard = () => {
                 logo: dashboardLogo || undefined,
               })
             );
-            setSaveStatus('Saved');
+            setSaveStatus(BI_UI.SAVED);
             const base =
               typeof window !== 'undefined' ? window.location.origin : '';
             setDashboardServerId(id);
             setDashboardEffectiveRole('Editor');
             setShareUrl(`${base}/dashboard/${id}`);
-            fetch('/api/bi/dashboards')
-              .then((r) => r.json())
+            getDashboardsList()
+              .then((r) => r.data)
               .then((list) =>
                 setSavedDashboards(Array.isArray(list) ? list : [])
               );
@@ -740,7 +630,7 @@ const BiDashboard = () => {
                 logo: dashboardLogo || undefined,
               })
             );
-            setSaveStatus('Saved (local)');
+            setSaveStatus(BI_UI.SAVED_LOCAL);
             setLastSavedHash(nextHash);
             try {
               localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
@@ -760,7 +650,7 @@ const BiDashboard = () => {
               logo: dashboardLogo || undefined,
             })
           );
-          setSaveStatus('Saved (local)');
+          setSaveStatus(BI_UI.SAVED_LOCAL);
           setLastSavedHash(nextHash);
           try {
             localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
@@ -780,7 +670,7 @@ const BiDashboard = () => {
             logo: dashboardLogo || undefined,
           })
         );
-        setSaveStatus('Saved (local)');
+        setSaveStatus(BI_UI.SAVED_LOCAL);
         setLastSavedHash(nextHash);
         try {
           localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
@@ -800,7 +690,7 @@ const BiDashboard = () => {
           logo: dashboardLogo || undefined,
         })
       );
-      setSaveStatus('Saved (local)');
+      setSaveStatus(BI_UI.SAVED_LOCAL);
       setLastSavedHash(nextHash);
       try {
         localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
@@ -821,7 +711,7 @@ const BiDashboard = () => {
   const handleShare = useCallback(() => {
     if (!dashboardServerId) return;
     if (dashboardEffectiveRole !== 'Editor') {
-      setSaveStatus('Only editors can share');
+      setSaveStatus(BI_UI.EDITORS_ONLY_SHARE);
       setTimeout(() => setSaveStatus(''), 2000);
       return;
     }
@@ -913,29 +803,29 @@ const BiDashboard = () => {
             setDashboardLogo(parsed.logo);
           else setDashboardLogo(null);
           try {
-            const payloadForCompare = buildDashboardSavePayload({
+            const payloadForCompare = dashboardUtils.buildDashboardSavePayload({
               name: parsed.dashboardName || 'My Dashboard',
               collection: loadedCollection,
               charts: chartsWithIds,
               layouts: validLayouts,
               logo: parsed.logo,
             });
-            const h = stableStringify(payloadForCompare);
+            const h = dashboardUtils.stableStringify(payloadForCompare);
             setLastSavedHash(h);
             localStorage.setItem(LAST_SAVED_HASH_KEY, h);
           } catch {
             /* ignore */
           }
-          setSaveStatus('Loaded');
+          setSaveStatus(BI_UI.LOADED);
           setTimeout(() => setSaveStatus(''), 2000);
         }
       } catch {
-        setSaveStatus('Load failed');
+        setSaveStatus(BI_UI.LOAD_FAILED);
         setTimeout(() => setSaveStatus(''), 2000);
       }
     } else {
-      fetch('/api/bi/dashboards')
-        .then((res) => res.json())
+      getDashboardsList()
+        .then((res) => res.data)
         .then((list) => {
           if (list?.length) {
             const latest = list[list.length - 1];
@@ -1012,30 +902,31 @@ const BiDashboard = () => {
               );
               setCollectionInput(loadedCollection);
               try {
-                const payloadForCompare = buildDashboardSavePayload({
-                  name: latest?.name || 'My Dashboard',
-                  collection: loadedCollection,
-                  charts: chartsWithIds,
-                  layouts: validLayouts,
-                  logo: latest?.logo,
-                });
-                const h = stableStringify(payloadForCompare);
+                const payloadForCompare =
+                  dashboardUtils.buildDashboardSavePayload({
+                    name: latest?.name || 'My Dashboard',
+                    collection: loadedCollection,
+                    charts: chartsWithIds,
+                    layouts: validLayouts,
+                    logo: latest?.logo,
+                  });
+                const h = dashboardUtils.stableStringify(payloadForCompare);
                 setLastSavedHash(h);
                 localStorage.setItem(LAST_SAVED_HASH_KEY, h);
               } catch {
                 /* ignore */
               }
-              setSaveStatus('Loaded from server');
+              setSaveStatus(BI_UI.LOADED_FROM_SERVER);
             } else {
-              setSaveStatus('No saved dashboard');
+              setSaveStatus(BI_UI.NO_SAVED_DASHBOARD);
             }
           } else {
-            setSaveStatus('No saved dashboard');
+            setSaveStatus(BI_UI.NO_SAVED_DASHBOARD);
           }
           setTimeout(() => setSaveStatus(''), 2000);
         })
         .catch(() => {
-          setSaveStatus('Load failed');
+          setSaveStatus(BI_UI.LOAD_FAILED);
           setTimeout(() => setSaveStatus(''), 2000);
         });
     }
@@ -1061,16 +952,17 @@ const BiDashboard = () => {
   const handleLoadDashboardById = useCallback(
     (id) => {
       if (!id) return;
-      setSaveStatus('Loading...');
-      fetch(`/api/bi/dashboards/${id}`)
+      setSaveStatus(BI_UI.LOADING);
+      getDashboardById(id)
         .then((res) => {
-          if (res.status === 404) {
-            setSaveStatus('Dashboard not found');
+          if (res.status === HTTP_STATUS.NOT_FOUND) {
+            setSaveStatus(BI_UI.DASHBOARD_NOT_FOUND);
             setTimeout(() => setSaveStatus(''), 2000);
             return null;
           }
-          if (!res.ok) throw new Error(`Failed to load: ${res.status}`);
-          return res.json();
+          if (!isHttpSuccessStatus(res.status))
+            throw new Error(FORMAT_FAILED_LOAD_BY_ID(res.status));
+          return res.data;
         })
         .then((data) => {
           if (data == null) return;
@@ -1078,9 +970,9 @@ const BiDashboard = () => {
             chartsWithIds,
             validLayouts,
             collection: loadedCollection,
-          } = buildLayoutsAndChartsFromSaved(data);
+          } = dashboardUtils.buildLayoutsAndChartsFromSaved(data);
           if (chartsWithIds.length === 0) {
-            setSaveStatus('No charts in this dashboard');
+            setSaveStatus(BI_UI.NO_CHARTS_IN_DASHBOARD);
             setTimeout(() => setSaveStatus(''), 2000);
             return;
           }
@@ -1098,14 +990,14 @@ const BiDashboard = () => {
             typeof window !== 'undefined' ? window.location.origin : '';
           setShareUrl(`${base}/dashboard/${id}`);
           try {
-            const payloadForCompare = buildDashboardSavePayload({
+            const payloadForCompare = dashboardUtils.buildDashboardSavePayload({
               name: data?.name || 'My Dashboard',
               collection: loadedCollection,
               charts: chartsWithIds,
               layouts: validLayouts,
               logo: data?.logo,
             });
-            const h = stableStringify(payloadForCompare);
+            const h = dashboardUtils.stableStringify(payloadForCompare);
             setLastSavedHash(h);
             localStorage.setItem(LAST_SAVED_HASH_KEY, h);
           } catch {
@@ -1116,11 +1008,11 @@ const BiDashboard = () => {
             setDashboardLogo(data.logo);
           else setDashboardLogo(null);
           appendRecentDashboardId(id);
-          setSaveStatus('Loaded');
+          setSaveStatus(BI_UI.LOADED);
           setTimeout(() => setSaveStatus(''), 2000);
         })
         .catch((err) => {
-          setSaveStatus(err.message || 'Load failed');
+          setSaveStatus(err.message || BI_UI.LOAD_FAILED);
           setTimeout(() => setSaveStatus(''), 2000);
         });
     },
@@ -1128,13 +1020,13 @@ const BiDashboard = () => {
   );
 
   const handlePrintDashboard = useCallback(async () => {
-    setSaveStatus('Preparing print...');
+    setSaveStatus(BI_UI.PREPARING_PRINT);
     try {
       const html2canvas = (await import('html2canvas')).default;
       // Capture only the charts area (exclude zoom controls)
       const printArea = document.querySelector('.bi-playground-content');
       if (!printArea) {
-        setSaveStatus('Canvas not found');
+        setSaveStatus(BI_UI.CANVAS_NOT_FOUND);
         setTimeout(() => setSaveStatus(''), 2000);
         return;
       }
@@ -1149,7 +1041,7 @@ const BiDashboard = () => {
       // Open a minimal print window with only the canvas image
       const printWindow = window.open('', '_blank', 'width=1200,height=800');
       if (!printWindow) {
-        setSaveStatus('Popup blocked — allow popups and try again');
+        setSaveStatus(BI_UI.POPUP_BLOCKED);
         setTimeout(() => setSaveStatus(''), 3000);
         return;
       }
@@ -1218,11 +1110,11 @@ const BiDashboard = () => {
       `);
 
       printWindow.document.close();
-      setSaveStatus('Print dialog opened');
+      setSaveStatus(BI_UI.PRINT_DIALOG_OPENED);
       setTimeout(() => setSaveStatus(''), 2000);
     } catch (error) {
       console.error('Print failed', error);
-      setSaveStatus('Print failed');
+      setSaveStatus(BI_UI.PRINT_FAILED);
       setTimeout(() => setSaveStatus(''), 3000);
     }
   }, []);
@@ -1249,12 +1141,12 @@ const BiDashboard = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setSaveStatus('JSON downloaded');
+    setSaveStatus(BI_UI.JSON_DOWNLOADED);
     setTimeout(() => setSaveStatus(''), 2000);
   }, [charts, layouts, dashboardName, dashboardLogo]);
 
   const handleDownloadPDF = useCallback(async () => {
-    setSaveStatus('Generating PDF...');
+    setSaveStatus(BI_UI.GENERATING_PDF);
     setExportPdfInProgress(true);
     const pdfTitle =
       (dashboardName && String(dashboardName).trim()) || 'Dashboard Export';
@@ -1265,7 +1157,7 @@ const BiDashboard = () => {
       const html2canvas = (await import('html2canvas')).default;
 
       const target = document.querySelector('.bi-playground-content');
-      if (!target) throw new Error('Export area not found');
+      if (!target) throw new Error(BI_UI.EXPORT_AREA_NOT_FOUND);
 
       // ── Detect content types ───────────────────────────────────────────────
       const hasCanvas = target.querySelector('canvas') !== null;
@@ -1298,7 +1190,9 @@ const BiDashboard = () => {
 
         const allColumns = theadCells.map((th, idx) => ({
           idx,
-          label: cleanPdfHeaderLabel(th.innerText ?? th.textContent ?? ''),
+          label: dashboardUtils.cleanPdfHeaderLabel(
+            th.innerText ?? th.textContent ?? ''
+          ),
         }));
 
         const columns = allColumns.filter(
@@ -1320,7 +1214,8 @@ const BiDashboard = () => {
         const filteredRows = rows.filter((row) =>
           row.some((cell) => cell !== '')
         );
-        if (filteredRows.length === 0) throw new Error('No table data found');
+        if (filteredRows.length === 0)
+          throw new Error(BI_UI.NO_TABLE_DATA_FOR_PDF);
 
         const orientation = columns.length > 6 ? 'landscape' : 'portrait';
         const pdf = new jsPDF({
@@ -1436,9 +1331,7 @@ const BiDashboard = () => {
         });
 
         pdf.save(`dashboard-${Date.now()}.pdf`);
-        setSaveStatus(
-          `✓ PDF downloaded — ${filteredRows.length.toLocaleString()} records`
-        );
+        setSaveStatus(FORMAT_PDF_DOWNLOADED_RECORDS(filteredRows.length));
         setTimeout(() => setSaveStatus(''), 3000);
         return;
       }
@@ -1484,7 +1377,7 @@ const BiDashboard = () => {
         chartCards = [target];
       }
 
-      setSaveStatus(`Found ${chartCards.length} chart(s) — building PDF...`);
+      setSaveStatus(FORMAT_PDF_BUILDING_CHARTS(chartCards.length));
 
       const pdf = new jsPDF({
         orientation: 'landscape',
@@ -1950,7 +1843,9 @@ const BiDashboard = () => {
 
           const allColumns = theadCells.map((th, idx) => ({
             idx,
-            label: cleanPdfHeaderLabel(th.innerText ?? th.textContent ?? ''),
+            label: dashboardUtils.cleanPdfHeaderLabel(
+              th.innerText ?? th.textContent ?? ''
+            ),
           }));
           const columns = allColumns.filter(
             (col) =>
@@ -2134,11 +2029,11 @@ const BiDashboard = () => {
       }
 
       pdf.save(`dashboard-${Date.now()}.pdf`);
-      setSaveStatus(`✓ PDF downloaded — ${chartCards.length} chart(s)`);
+      setSaveStatus(FORMAT_PDF_DOWNLOADED_CHARTS(chartCards.length));
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (error) {
       console.error('PDF export failed:', error);
-      setSaveStatus(error.message || 'PDF export failed');
+      setSaveStatus(error.message || BI_UI.PDF_EXPORT_FAILED);
       setTimeout(() => setSaveStatus(''), 3000);
     } finally {
       setExportPdfInProgress(false);
@@ -2434,7 +2329,7 @@ const BiDashboard = () => {
         dashboardId={dashboardServerId}
         onClose={() => setShareModalOpen(false)}
         onShared={() => {
-          setSaveStatus('Dashboard shared successfully');
+          setSaveStatus(BI_UI.SHARED_OK);
           setTimeout(() => setSaveStatus(''), 2000);
         }}
       />

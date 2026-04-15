@@ -7,70 +7,11 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useDispatch } from 'react-redux';
-import { loadDashboard } from '@/store/reducers/dashboardReducer';
+import { fetchAndLoadDashboardById } from '@/store/actions/dashboardActions';
 import { BiDashboard } from '@/components/bi';
-
-function buildLayoutsAndCharts(dashboard) {
-  const cfg = dashboard?.charts ?? [];
-  if (!Array.isArray(cfg) || cfg.length === 0) {
-    return { chartsWithIds: [], validLayouts: {} };
-  }
-
-  const chartIds = cfg.map(
-    (c) =>
-      c.id || `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-  );
-  const validLayouts = {};
-
-  if (dashboard?.layouts?.lg && Array.isArray(dashboard.layouts.lg)) {
-    const savedLg = dashboard.layouts.lg;
-    const hasValidSaved =
-      savedLg.length === chartIds.length &&
-      chartIds.every((id) => savedLg.some((item) => item.i === id));
-
-    if (hasValidSaved) {
-      validLayouts.lg = savedLg;
-      validLayouts.md =
-        dashboard.layouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
-      validLayouts.sm =
-        dashboard.layouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
-    } else {
-      const items = chartIds.map((id, idx) => ({
-        i: id,
-        x: (idx % 2) * 6,
-        y: Math.floor(idx / 2) * 2,
-        w: 6,
-        h: 2,
-      }));
-      validLayouts.lg = items;
-      validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
-      validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
-    }
-  } else {
-    const items = chartIds.map((id, idx) => ({
-      i: id,
-      x: (idx % 2) * 6,
-      y: Math.floor(idx / 2) * 2,
-      w: 6,
-      h: 2,
-    }));
-    validLayouts.lg = items;
-    validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
-    validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
-  }
-
-  const chartsWithIds = cfg.map((c, idx) => ({
-    ...c,
-    id: c.id || chartIds[idx],
-  }));
-
-  const collection =
-    (chartsWithIds[0] && chartsWithIds[0].collection) ||
-    dashboard?.collection ||
-    '';
-
-  return { chartsWithIds, validLayouts, collection };
-}
+import { DASHBOARD_PAGE_UI } from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import { meRequest } from '@/services/authService';
 
 export default function SharedDashboardPage() {
   const router = useRouter();
@@ -83,15 +24,15 @@ export default function SharedDashboardPage() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    fetch('/api/auth/me')
+    meRequest()
       .then((r) => {
-        if (r.status === 401) {
+        if (r.status === HTTP_STATUS.UNAUTHORIZED) {
           router.replace(
             `/login?redirect=${encodeURIComponent(`/dashboard/${id}`)}`
           );
           return null;
         }
-        return r.ok ? r.json() : null;
+        return isHttpSuccessStatus(r.status) ? r.data : null;
       })
       .then((me) => {
         if (!cancelled && me) setAuthed(true);
@@ -111,37 +52,9 @@ export default function SharedDashboardPage() {
 
     let cancelled = false;
 
-    fetch(`/api/bi/dashboards/${id}`)
-      .then((res) => {
-        if (res.status === 404) {
-          if (!cancelled) {
-            setStatus('notfound');
-            setErrorMessage('Dashboard not found');
-          }
-          return null;
-        }
-        if (!res.ok) throw new Error(`Failed to load dashboard: ${res.status}`);
-        return res.json();
-      })
+    Promise.resolve(dispatch(fetchAndLoadDashboardById(id)))
       .then((data) => {
         if (cancelled || data == null) return;
-
-        const { chartsWithIds, validLayouts, collection } =
-          buildLayoutsAndCharts(data);
-
-        if (chartsWithIds.length === 0) {
-          setStatus('notfound');
-          setErrorMessage('This dashboard has no charts');
-          return;
-        }
-
-        dispatch(
-          loadDashboard({
-            charts: chartsWithIds,
-            layouts: validLayouts,
-            collection: collection || '',
-          })
-        );
         try {
           localStorage.setItem(
             'powerbi-active-dashboard-meta',
@@ -158,7 +71,7 @@ export default function SharedDashboardPage() {
       .catch((err) => {
         if (!cancelled) {
           setStatus('error');
-          setErrorMessage(err.message || 'Failed to load dashboard');
+          setErrorMessage(err.message || DASHBOARD_PAGE_UI.LOAD_FAILED);
         }
       });
 
@@ -192,7 +105,7 @@ export default function SharedDashboardPage() {
               margin: '0 auto 16px',
             }}
           />
-          <p>Loading dashboard…</p>
+          <p>{DASHBOARD_PAGE_UI.LOADING}</p>
         </div>
         <style jsx>{`
           @keyframes spin {
@@ -220,8 +133,8 @@ export default function SharedDashboardPage() {
         <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
           <h1 style={{ fontSize: 24, color: '#1e293b', marginBottom: 8 }}>
             {status === 'notfound'
-              ? 'Dashboard not found'
-              : 'Something went wrong'}
+              ? DASHBOARD_PAGE_UI.NOT_FOUND_DETAIL
+              : DASHBOARD_PAGE_UI.ERROR_TITLE}
           </h1>
           <p style={{ color: '#64748b', marginBottom: 24 }}>{errorMessage}</p>
           <Link
@@ -236,7 +149,7 @@ export default function SharedDashboardPage() {
               fontWeight: 500,
             }}
           >
-            Back to Dashboard
+            {DASHBOARD_PAGE_UI.BACK_TO_DASHBOARD}
           </Link>
         </div>
       </div>
