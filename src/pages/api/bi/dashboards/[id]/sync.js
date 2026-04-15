@@ -17,9 +17,9 @@ export default async function handler(req, res) {
       .status(HTTP_STATUS.BAD_REQUEST)
       .json({ error: API_MSG.DASHBOARD_ID_REQUIRED });
   }
-  try {
-    const url = `${getBackendBaseUrl}${ApiVersion}/dashboards/${id}/share`;
 
+  try {
+    const url = `${getBackendBaseUrl}${ApiVersion}/dashboards/${encodeURIComponent(id)}/sync`;
     const upstream = await axios.post(url, req.body || {}, {
       headers: {
         'Content-Type': 'application/json',
@@ -34,13 +34,13 @@ export default async function handler(req, res) {
     try {
       json = text ? JSON.parse(text) : null;
     } catch {
-      json = text;
+      json = text ? { message: text } : {};
     }
 
-    res.status(upstream.status).json(json ?? {});
+    return res.status(upstream.status).json(json ?? {});
   } catch (e) {
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
-      error: e.message || API_MSG.SHARE_FAILED,
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: e.message || API_MSG.SYNC_FAILED,
     });
   }
 }

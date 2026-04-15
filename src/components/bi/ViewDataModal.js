@@ -6,6 +6,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { AiOutlineClose } from 'react-icons/ai';
 import { MaterialReactTable } from 'material-react-table';
+import { VIEW_DATA_UI } from '@/utils/messages';
+import { postBiQuery } from '@/services/biService';
 import styles from './ViewDataModal.module.css';
 
 const ViewDataModal = ({
@@ -31,20 +33,16 @@ const ViewDataModal = ({
     setError(null);
     const limit =
       typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10000;
-    fetch('/api/bi/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        collection,
-        type: 'table',
-        selectedFields: fields.map((f) => f.name),
-        limit,
-        sortBy: 'dimension',
-        sortOrder: 'asc',
-        filter: dataFilter || undefined,
-      }),
+    postBiQuery({
+      collection,
+      type: 'table',
+      selectedFields: fields.map((f) => f.name),
+      limit,
+      sortBy: 'dimension',
+      sortOrder: 'asc',
+      filter: dataFilter || undefined,
     })
-      .then((res) => res.json())
+      .then((res) => res.data)
       .then((result) => {
         if (cancelled) return;
         if (Array.isArray(result)) {
@@ -58,7 +56,7 @@ const ViewDataModal = ({
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err.message || 'Failed to load data');
+          setError(err.message || VIEW_DATA_UI.FAILED_TO_LOAD_DATA);
           setData([]);
         }
       })

@@ -2,29 +2,36 @@
  * Power BI Lite - Collections List API
  * Returns list of all available collections
  */
-const getBackendUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import axios from 'axios';
+import { API_MSG, FORMAT_BACKEND_ERROR_STATUS } from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import { ApiVersion } from '@/utils/constants';
+import { getBackendBaseUrl } from '@/services/http/backendClient';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res
+      .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
+      .json({ error: API_MSG.METHOD_NOT_ALLOWED });
   }
 
   try {
-    const url = `${getBackendUrl()}/api/v1/collections`;
+    const url = `${getBackendBaseUrl}${ApiVersion}/collections`;
     console.log(`[BI Collections] Fetching collections from: ${url}`);
-    const response = await fetch(url);
+    const response = await axios.get(url, { validateStatus: () => true });
 
-    if (!response.ok) {
-      throw new Error(`Backend error: ${response.status}`);
+    if (!isHttpSuccessStatus(response.status)) {
+      throw new Error(FORMAT_BACKEND_ERROR_STATUS(response.status));
     }
 
-    const collections = await response.json();
-    return res.status(200).json(Array.isArray(collections) ? collections : []);
+    const collections = response.data;
+    return res
+      .status(HTTP_STATUS.OK)
+      .json(Array.isArray(collections) ? collections : []);
   } catch (error) {
     console.error('BI Collections Error manish', error);
-    return res.status(500).json({
-      error: 'Failed to fetch collections',
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: API_MSG.FAILED_FETCH_COLLECTIONS,
       details: error.message,
     });
   }

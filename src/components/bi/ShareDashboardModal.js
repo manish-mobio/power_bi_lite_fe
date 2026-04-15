@@ -1,4 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { SHARE_UI } from '@/utils/messages';
+import { isHttpSuccessStatus } from '@/utils/statusCode';
+import { searchUsersRequest } from '@/services/authService';
+import { shareDashboard as postDashboardShare } from '@/services/biService';
 import styles from './ShareDashboardModal.module.css';
 
 export default function ShareDashboardModal({
@@ -35,12 +39,10 @@ export default function ShareDashboardModal({
     setSearching(true);
     const t = window.setTimeout(async () => {
       try {
-        const res = await fetch(
-          `/api/auth/search-users?email=${encodeURIComponent(q)}`
-        );
-        const data = await res.json().catch(() => []);
+        const res = await searchUsersRequest(q);
+        const data = Array.isArray(res.data) ? res.data : [];
         if (!cancelled) {
-          if (res.ok) setSuggestions(Array.isArray(data) ? data : []);
+          if (isHttpSuccessStatus(res.status)) setSuggestions(data);
           else setSuggestions([]);
         }
       } catch {
@@ -124,21 +126,20 @@ export default function ShareDashboardModal({
         })),
       };
 
-      const res = await fetch(`/api/bi/dashboards/${dashboardId}/share`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setSubmitError(data?.error || 'Failed to share dashboard');
+      const res = await postDashboardShare(dashboardId, payload);
+      const data =
+        res.data && typeof res.data === 'object' && !Array.isArray(res.data)
+          ? res.data
+          : {};
+      if (!isHttpSuccessStatus(res.status)) {
+        setSubmitError(data?.error || SHARE_UI.SHARE_DASHBOARD_FAILED);
         return;
       }
 
       onShared?.(data);
       onClose?.();
     } catch (e) {
-      setSubmitError(e.message || 'Failed to share dashboard');
+      setSubmitError(e.message || SHARE_UI.SHARE_DASHBOARD_FAILED);
     } finally {
       setSubmitting(false);
     }

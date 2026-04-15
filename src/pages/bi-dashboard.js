@@ -5,6 +5,8 @@ import React, { useEffect, useState } from 'react';
 import { BiDashboard } from '@/components/bi';
 import { useRouter } from 'next/router';
 import SessionLoadingScreen from '@/components/auth/SessionLoadingScreen';
+import { meRequest } from '@/services/authService';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
 
 const BiDashboardPage = () => {
   const router = useRouter();
@@ -12,13 +14,13 @@ const BiDashboardPage = () => {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/auth/me')
+    meRequest()
       .then((res) => {
-        if (res.status === 401) {
+        if (res.status === HTTP_STATUS.UNAUTHORIZED) {
           router.replace('/login');
           return null;
         }
-        return res.ok ? res.json() : null;
+        return isHttpSuccessStatus(res.status) ? res.data : null;
       })
       .then(() => {
         if (!cancelled) setReady(true);

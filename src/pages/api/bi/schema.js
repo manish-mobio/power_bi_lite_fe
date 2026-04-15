@@ -2,43 +2,56 @@
  * Power BI Lite - Schema API
  * Returns field schema for a collection (detects field types from sample data)
  */
-const getBackendUrl = () =>
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
+import axios from 'axios';
+import {
+  API_MSG,
+  FORMAT_BACKEND_ERROR_STATUS,
+  FORMAT_COLLECTION_NOT_FOUND,
+} from '@/utils/messages';
+import HTTP_STATUS, { isHttpSuccessStatus } from '@/utils/statusCode';
+import { ApiVersion } from '@/utils/constants';
+import { getBackendBaseUrl } from '@/services/http/backendClient';
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res
+      .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
+      .json({ error: API_MSG.METHOD_NOT_ALLOWED });
   }
 
   try {
     const { collection } = req.query;
     if (!collection) {
-      return res.status(400).json({ error: 'Collection name is required' });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ error: API_MSG.COLLECTION_NAME_REQUIRED });
     }
 
     // Fetch sample data from backend to infer schema
-    let apiPath = `${getBackendUrl()}/api/v1/collection/${collection}`;
+    let apiPath = `${getBackendBaseUrl}${ApiVersion}/collection/${collection}`;
     let url = `${apiPath}?limit=10`;
 
-    let response = await fetch(url);
-    if (!response.ok && response.status === 404) {
+    let response = await axios.get(url, { validateStatus: () => true });
+    if (
+      !isHttpSuccessStatus(response.status) &&
+      response.status === HTTP_STATUS.NOT_FOUND
+    ) {
       apiPath = collection
-        ? `${getBackendUrl()}/api/v1/${collection}`
-        : `${getBackendUrl()}/api/v1`;
+        ? `${getBackendBaseUrl}${ApiVersion}/${collection}`
+        : `${getBackendBaseUrl}${ApiVersion}`;
       url = `${apiPath}?limit=10`;
-      response = await fetch(url);
+      response = await axios.get(url, { validateStatus: () => true });
     }
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        return res
-          .status(404)
-          .json({ error: `Collection "${collection}" not found` });
+    if (!isHttpSuccessStatus(response.status)) {
+      if (response.status === HTTP_STATUS.NOT_FOUND) {
+        return res.status(HTTP_STATUS.NOT_FOUND).json({
+          error: FORMAT_COLLECTION_NOT_FOUND(collection),
+        });
       }
-      throw new Error(`Backend error: ${response.status}`);
+      throw new Error(FORMAT_BACKEND_ERROR_STATUS(response.status));
     }
 
-    const data = await response.json();
+    const data = response.data;
     let items = Array.isArray(data) ? data : data?.data || data?.results || [];
     if (!items.length && data && typeof data === 'object') {
       const key = Object.keys(data).find((k) => Array.isArray(data[k]));
@@ -48,10 +61,12 @@ export default async function handler(req, res) {
     // Fetch record count from metadata endpoint first (so we always have it)
     let recordCount = null;
     try {
-      const metaUrl = `${getBackendUrl()}/api/v1/collection/${collection}/meta`;
-      const metaResponse = await fetch(metaUrl);
-      if (metaResponse.ok) {
-        const metaData = await metaResponse.json();
+      const metaUrl = `${getBackendBaseUrl}${ApiVersion}/collection/${collection}/meta`;
+      const metaResponse = await axios.get(metaUrl, {
+        validateStatus: () => true,
+      });
+      if (isHttpSuccessStatus(metaResponse.status)) {
+        const metaData = metaResponse.data;
         recordCount =
           metaData.recordCount != null ? metaData.recordCount : null;
       }
@@ -66,9 +81,9 @@ export default async function handler(req, res) {
     if (!items.length) {
       // Return fields array and recordCount so UI can show count even with no sample
       if (recordCount !== null) {
-        return res.status(200).json({ fields: [], recordCount });
+        return res.status(HTTP_STATUS.OK).json({ fields: [], recordCount });
       }
-      return res.status(200).json([]);
+      return res.status(HTTP_STATUS.OK).json([]);
     }
 
     // Infer schema from first record
@@ -104,13 +119,13 @@ export default async function handler(req, res) {
 
     // Always return object with recordCount when we have it
     if (recordCount !== null) {
-      return res.status(200).json({ fields: schema, recordCount });
+      return res.status(HTTP_STATUS.OK).json({ fields: schema, recordCount });
     }
-    return res.status(200).json(schema);
+    return res.status(HTTP_STATUS.OK).json(schema);
   } catch (error) {
     console.error('[BI Schema Error]', error);
-    return res.status(500).json({
-      error: 'Failed to fetch schema',
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      error: API_MSG.FAILED_FETCH_SCHEMA,
       details: error.message,
     });
   }

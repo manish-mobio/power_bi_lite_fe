@@ -6,26 +6,14 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import SmartChart from './SmartChart';
+import {
+  cursorMap,
+  DIRECTIONS,
+  HANDLE_SIZE,
+  MIN_H,
+  MIN_W,
+} from '@/utils/constants';
 
-const MIN_W = 220;
-const MIN_H = 160;
-const HANDLE_SIZE = 2; // px, size of resize handles
-
-// 8 resize directions
-const DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
-
-const cursorMap = {
-  n: 'n-resize',
-  ne: 'ne-resize',
-  e: 'e-resize',
-  se: 'se-resize',
-  s: 's-resize',
-  sw: 'sw-resize',
-  w: 'w-resize',
-  nw: 'nw-resize',
-};
-
-// Handle styles for each of 8 directions
 function getHandleStyle(dir) {
   const h = HANDLE_SIZE;
   const base = {

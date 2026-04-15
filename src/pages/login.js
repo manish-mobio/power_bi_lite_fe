@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
+import { AUTH_UI } from '@/utils/messages';
+import { isHttpSuccessStatus } from '@/utils/statusCode';
+import { loginRequest } from '@/services/authService';
 import authForm from '../styles/AuthForm.module.css';
 
 export default function LoginPage() {
@@ -17,14 +20,13 @@ export default function LoginPage() {
     setError('');
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data?.error || 'Login failed');
+      const res = await loginRequest({ email, password });
+      const data =
+        res.data && typeof res.data === 'object' && !Array.isArray(res.data)
+          ? res.data
+          : {};
+      if (!isHttpSuccessStatus(res.status)) {
+        setError(data?.error || AUTH_UI.LOGIN_FAILED);
         setIsSubmitting(false);
         return;
       }
@@ -35,7 +37,7 @@ export default function LoginPage() {
           : '/bi-dashboard';
       await router.replace(target);
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setError(err.message || AUTH_UI.LOGIN_FAILED);
       setIsSubmitting(false);
     }
   };

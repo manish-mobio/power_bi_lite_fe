@@ -4,6 +4,11 @@
  */
 import React, { useEffect, useState } from 'react';
 import PropTypes from 'prop-types';
+import {
+  FIELD_LIST_UI,
+  FORMAT_FIELD_LIST_NON_JSON_ERROR,
+} from '@/utils/messages';
+import { getBiSchema } from '@/services/biService';
 
 const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
   const [fields, setFields] = useState([]);
@@ -17,16 +22,15 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/bi/schema?collection=${encodeURIComponent(collection)}`)
+    getBiSchema(collection)
       .then(async (res) => {
-        const contentType = res.headers.get('content-type');
+        const contentType = res.headers['content-type'];
         if (!contentType || !contentType.includes('application/json')) {
-          await res.text(); // Consume response
           throw new Error(
-            `Server returned ${res.status}: ${res.statusText}. Collection may not exist.`
+            FORMAT_FIELD_LIST_NON_JSON_ERROR(res.status, res.statusText)
           );
         }
-        return res.json();
+        return res.data;
       })
       .then((data) => {
         if (cancelled) return;
@@ -57,10 +61,10 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
       })
       .catch((err) => {
         if (!cancelled) {
-          const errorMsg = err.message || 'Failed to load schema';
+          const errorMsg = err.message || FIELD_LIST_UI.FAILED_LOAD_SCHEMA;
           setError(
             errorMsg.includes('JSON')
-              ? 'Collection not found or server error'
+              ? FIELD_LIST_UI.COLLECTION_NOT_FOUND_OR_SERVER
               : errorMsg
           );
           setFields([]);

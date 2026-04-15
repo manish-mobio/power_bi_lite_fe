@@ -5,6 +5,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { createWrapper } from 'next-redux-wrapper';
 import rootReducer from './reducers';
+import { DASHBOARD_ACTION_TYPES } from '@/store/actionTypes/dashboardActionTypes';
 
 const makeStore = () => {
   return configureStore({
@@ -12,7 +13,10 @@ const makeStore = () => {
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
         serializableCheck: {
-          ignoredActions: ['dashboard/setLayouts', 'dashboard/loadDashboard'],
+          ignoredActions: [
+            DASHBOARD_ACTION_TYPES.SET_LAYOUTS,
+            DASHBOARD_ACTION_TYPES.LOAD_DASHBOARD,
+          ],
         },
       }),
     devTools: process.env.NODE_ENV !== 'production',

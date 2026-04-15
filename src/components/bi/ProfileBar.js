@@ -7,6 +7,9 @@ import {
   AiOutlineLock,
   AiOutlineDelete,
 } from 'react-icons/ai';
+import { AUTH_UI } from '@/utils/messages';
+import { isHttpSuccessStatus } from '@/utils/statusCode';
+import { changePasswordRequest } from '@/services/authService';
 import styles from './ProfileBar.module.css';
 
 function ProfileBar({
@@ -50,35 +53,34 @@ function ProfileBar({
     e.preventDefault();
     setPwdError('');
     if (String(currentPassword) === String(newPassword)) {
-      setPwdError('Current and new passwords must be different.');
+      setPwdError(AUTH_UI.PASSWORD_DIFFERENT);
       setPwdSubmitting(false);
       return;
     }
     if (newPassword.length < 8) {
-      setPwdError('New password must be at least 8 characters.');
+      setPwdError(AUTH_UI.PASSWORD_MIN_LENGTH);
       return;
     }
     if (newPassword !== confirmPassword) {
-      setPwdError('New passwords do not match.');
+      setPwdError(AUTH_UI.PASSWORDS_NO_MATCH);
       return;
     }
     setPwdSubmitting(true);
     try {
-      const res = await fetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setPwdError(data?.error || 'Could not update password');
+      const res = await changePasswordRequest({ currentPassword, newPassword });
+      const data =
+        res.data && typeof res.data === 'object' && !Array.isArray(res.data)
+          ? res.data
+          : {};
+      if (!isHttpSuccessStatus(res.status)) {
+        setPwdError(data?.error || AUTH_UI.PASSWORD_UPDATE_FAILED);
         setPwdSubmitting(false);
         return;
       }
       closePwdModal();
       setOpen(false);
     } catch (err) {
-      setPwdError(err.message || 'Could not update password');
+      setPwdError(err.message || AUTH_UI.PASSWORD_UPDATE_FAILED);
       setPwdSubmitting(false);
     }
   };
