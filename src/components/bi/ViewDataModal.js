@@ -121,6 +121,29 @@ const ViewDataModal = ({
                 enableStickyHeader
                 enableRowVirtualization
                 muiTableBodyProps={{ sx: { fontSize: 12 } }}
+                muiBottomToolbarProps={{
+                  sx: {
+                    flex: '0 0 auto',
+                    borderTop: '1px solid #e5e7eb',
+                  },
+                }}
+                muiTablePaperProps={{
+                  sx: {
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    boxShadow: 'none',
+                    border: 'none',
+                  },
+                }}
+                muiTableContainerProps={{
+                  sx: {
+                    flex: '1 1 auto',
+                    minHeight: 0,
+                    overflow: 'auto',
+                  },
+                }}
               />
             </div>
           )}

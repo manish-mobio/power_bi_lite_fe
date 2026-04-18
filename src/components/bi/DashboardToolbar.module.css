@@ -552,6 +552,28 @@
   background: #f8fafc;
 }
 
+.loadModalRowFolder .loadModalRowName {
+  font-weight: 600;
+}
+
+.loadModalRowVersion {
+  padding-left: 28px;
+  background: #fafbfc;
+}
+
+.loadModalRowVersion:hover {
+  background: #f1f5f9;
+}
+
+.loadModalRowVersionLabel {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-gray-darker, #4b5563);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .loadModalRowRecent {
   background: #eff6ff;
 }
@@ -623,6 +645,34 @@
 .loadModalFooterBtn:hover {
   background: #f3f4f6;
   border-color: #d1d5db;
+}
+
+/* Viewer / restricted access — warm banner + muted disabled controls */
+.toolbarRestricted {
+  border-bottom-color: #fcd34d;
+  background: linear-gradient(180deg, #fffbeb 0%, #fefce8 100%);
+}
+
+.accessModeBadge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.toolbarRestricted .collectionSelect:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
+
+.toolbarRestricted .toolbarBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 @media (max-width: 480px) {

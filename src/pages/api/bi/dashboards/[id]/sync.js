@@ -39,6 +39,7 @@ export default async function handler(req, res) {
 
     return res.status(upstream.status).json(json ?? {});
   } catch (e) {
+    console.error('Sync error fe:', e);
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       error: e.message || API_MSG.SYNC_FAILED,
     });

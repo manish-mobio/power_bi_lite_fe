@@ -15,12 +15,14 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   max-width: 95vw;
   width: 900px;
-  max-height: 90vh;
+  height: 90vh; /* ✅ fixed height instead of max-height */
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* ✅ hard clip everything inside */
 }
 
 .header {
+  flex: 0 0 auto; /* ✅ never shrink */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -53,9 +55,12 @@
 }
 
 .body {
-  flex: 1;
-  overflow: auto;
+  flex: 1 1 auto; /* ✅ take remaining space */
+  min-height: 0; /* ✅ critical for nested flex scroll */
+  overflow: hidden;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .loading,
@@ -71,40 +76,26 @@
 }
 
 .tableWrap {
-  overflow: auto;
-  max-height: 60vh;
+  flex: 1 1 auto; /* ✅ fill body */
+  min-height: 0; /* ✅ critical */
+  overflow: hidden;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
+  display: flex;
+  flex-direction: column;
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.table th,
-.table td {
-  padding: 10px 12px;
-  text-align: left;
-  border-bottom: 1px solid #e2e8f0;
-  white-space: nowrap;
-}
-
-.table th {
-  background: #f8fafc;
-  font-weight: 600;
-  color: #334155;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-}
-
-.table tbody tr:hover {
-  background: #f8fafc;
+/* Force MRT's inner paper to fill tableWrap */
+.tableWrap > div {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .footer {
+  flex: 0 0 auto; /* ✅ never shrink */
   display: flex;
   align-items: center;
   justify-content: space-between;

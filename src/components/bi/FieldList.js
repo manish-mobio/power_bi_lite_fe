@@ -101,11 +101,17 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
           <button
             type='button'
             className='bi-add-chart-btn'
-            disabled={!collection}
+            disabled={!collection || !onAddChart}
             onClick={() =>
               handleAddChart(defaultDimension, defaultMeasure, 'COUNT')
             }
-            title={!collection ? 'Select a collection first' : 'Add chart'}
+            title={
+              !collection
+                ? 'Select a collection first'
+                : !onAddChart
+                  ? 'Read-only: cannot add charts'
+                  : 'Add chart'
+            }
           >
             + Add Chart
           </button>

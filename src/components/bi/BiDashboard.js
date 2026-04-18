@@ -2,7 +2,13 @@
  * Power BI Lite - Main Dashboard (3-column layout)
  * Left: Field List | Middle: Chart Canvas | Right: Config Panel
  */
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useMemo,
+} from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   addChart,
@@ -14,6 +20,7 @@ import {
   loadDashboard,
   setLayouts,
   updateChartLayout,
+  resetDashboard,
 } from '@/store/actions/dashboardActions';
 const dashboardUtils = require('@/utils/dashboard');
 import { AiOutlineExpand, AiOutlineCompress } from 'react-icons/ai';
@@ -21,6 +28,7 @@ import FieldList from './FieldList';
 import ChartCanvas from './ChartCanvas';
 import ConfigPanel from './ConfigPanel';
 import ViewDataModal from './ViewDataModal';
+
 // import Copilot from './Copilot';
 import styles from './BiDashboard.module.css';
 import DashboardToolbar from './DashboardToolbar';
@@ -31,6 +39,7 @@ import {
   getDashboardsList,
   saveDashboard,
   getDashboardById,
+  syncDashboard,
   uploadBiFile,
 } from '@/services/biService';
 import {
@@ -49,6 +58,189 @@ import {
   RECENT_DASHBOARDS_STORAGE_KEY,
   LAST_SAVED_HASH_KEY,
 } from '@/utils/constants';
+import {
+  errorMessage,
+  infoMessage,
+  loadingMessage,
+  updateMessage,
+} from '@/utils/commonFunctions';
+
+function stableStringify(value) {
+  const seen = new WeakSet();
+  return JSON.stringify(value, (key, val) => {
+    if (val && typeof val === 'object') {
+      if (seen.has(val)) return undefined;
+      seen.add(val);
+      if (Array.isArray(val)) return val;
+      return Object.keys(val)
+        .sort()
+        .reduce((acc, k) => {
+          acc[k] = val[k];
+          return acc;
+        }, {});
+    }
+    return val;
+  });
+}
+
+function sanitizeChartsForSave(charts) {
+  if (!Array.isArray(charts)) return [];
+  return charts.map((c) => {
+    if (!c || typeof c !== 'object') return c;
+    // Remove UI-only / volatile fields so they don't trigger "changes"
+    // eslint-disable-next-line no-unused-vars
+    const { refreshedAt: _refreshedAt, ...rest } = c;
+    return rest;
+  });
+}
+
+function buildDashboardSavePayload({
+  name,
+  collection,
+  charts,
+  layouts,
+  logo,
+}) {
+  return {
+    name: String(name || '').trim() || 'My Dashboard',
+    collection: String(collection || ''),
+    charts: sanitizeChartsForSave(charts),
+    layouts: layouts || {},
+    logo: logo || undefined,
+  };
+}
+
+function deriveBaseName(d) {
+  if (d == null) return 'My Dashboard';
+  if (
+    typeof d === 'object' &&
+    d.baseName != null &&
+    String(d.baseName).trim()
+  ) {
+    return String(d.baseName).trim();
+  }
+  const n = typeof d === 'string' ? d : String(d?.name || '');
+  const stripped = n.replace(/\s+\(v\d+\)\s+.+$/, '').trim();
+  return stripped || n.trim() || 'My Dashboard';
+}
+
+function lineageKeyOf(doc) {
+  if (!doc) return '';
+  return String(doc.lineageId || doc._id || '');
+}
+
+function groupDashboardsForToolbar(list, currentUserId) {
+  const me = String(currentUserId || '');
+  const raw = Array.isArray(list) ? list : [];
+  const mine = raw.filter((d) => String(d.userId) === me);
+  const shared = raw.filter(
+    (d) =>
+      String(d.userId) !== me &&
+      (d.sharedWith || []).some((x) => String(x.userId) === me)
+  );
+
+  const fold = (docs, isShared) => {
+    const map = new Map();
+    for (const d of docs) {
+      const key = lineageKeyOf(d);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(d);
+    }
+    const out = [];
+    for (const [lk, docs] of map) {
+      const sorted = [...docs].sort((a, b) => {
+        const va = a.versionNumber || 1;
+        const vb = b.versionNumber || 1;
+        if (vb !== va) return vb - va;
+        return (
+          new Date(b.updatedAt || 0).getTime() -
+          new Date(a.updatedAt || 0).getTime()
+        );
+      });
+      const latest = sorted[0];
+      const displayName = latest.baseName || deriveBaseName(latest);
+      out.push({
+        lineageKey: lk,
+        displayName: isShared ? `${displayName} (shared)` : displayName,
+        latestId: String(latest._id || latest.id),
+        latestUpdatedAt: latest.updatedAt,
+        ownerUserId: String(latest.userId),
+        isShared,
+      });
+    }
+    return out;
+  };
+
+  const a = fold(mine, false);
+  const b = fold(shared, true);
+  return [...a, ...b].sort((x, y) =>
+    x.displayName.localeCompare(y.displayName, undefined, {
+      sensitivity: 'base',
+    })
+  );
+}
+
+function stripSharedSuffix(displayName) {
+  return String(displayName || '')
+    .replace(/\s*\(shared\)\s*$/i, '')
+    .trim();
+}
+
+function formatVersionRowLabel(doc) {
+  const vn = doc.versionNumber != null ? doc.versionNumber : 1;
+  const base = doc.baseName || deriveBaseName(doc);
+  const lower = base.toLowerCase();
+  const ts = doc.updatedAt
+    ? new Date(doc.updatedAt).toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : '';
+  return ts ? `${lower} (v${vn}) — ${ts}` : `${lower} (v${vn})`;
+}
+
+/** Flat list: folder row then version rows (indented in UI). */
+function buildLoadModalNestedRows(groups, savedDashboards) {
+  const list = Array.isArray(savedDashboards) ? savedDashboards : [];
+  const rows = [];
+  for (const g of groups) {
+    const versions = list
+      .filter(
+        (d) =>
+          String(d.userId) === g.ownerUserId && lineageKeyOf(d) === g.lineageKey
+      )
+      .sort((a, b) => (a.versionNumber || 1) - (b.versionNumber || 1));
+
+    rows.push({
+      rowKey: `folder-${g.lineageKey}`,
+      kind: 'folder',
+      label: stripSharedSuffix(g.displayName),
+      loadId: g.latestId,
+      lineageKey: g.lineageKey,
+      latestUpdatedAt: g.latestUpdatedAt,
+      isShared: g.isShared,
+    });
+    const latestIdStr = String(g.latestId);
+    for (const v of versions) {
+      const vid = String(v._id || v.id);
+      if (vid === latestIdStr) continue;
+      rows.push({
+        rowKey: `ver-${v._id}`,
+        kind: 'version',
+        label: formatVersionRowLabel(v),
+        loadId: vid,
+        lineageKey: g.lineageKey,
+        updatedAt: v.updatedAt,
+      });
+    }
+  }
+  return rows;
+}
 
 const BiDashboard = () => {
   const dispatch = useDispatch();
@@ -78,6 +270,7 @@ const BiDashboard = () => {
   const [viewDataOpen, setViewDataOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [dashboardName, setDashboardName] = useState('');
+  const [dashboardOwnerId, setDashboardOwnerId] = useState(null);
   const [savedDashboards, setSavedDashboards] = useState([]);
   const [recentDashboardIds, setRecentDashboardIds] = useState([]);
   const [dashboardLogo, setDashboardLogo] = useState(null); // base64 data URL for dashboard logo
@@ -85,6 +278,50 @@ const BiDashboard = () => {
   const [isPlaygroundMaximized, setIsPlaygroundMaximized] = useState(false);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(260);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(280);
+
+  /** Server-computed: collaborator fork differs from owner’s latest (owners only). */
+  const [pendingCollaboratorSync, setPendingCollaboratorSync] =
+    useState(undefined);
+
+  const isOwner = useMemo(
+    () =>
+      Boolean(
+        me && dashboardOwnerId && String(me.id) === String(dashboardOwnerId)
+      ),
+    [me, dashboardOwnerId]
+  );
+
+  const isReadOnly =
+    Boolean(dashboardServerId) &&
+    dashboardEffectiveRole !== 'Editor' &&
+    !isOwner;
+
+  const dashboardGroups = useMemo(
+    () => groupDashboardsForToolbar(savedDashboards, me?.id),
+    [savedDashboards, me?.id]
+  );
+
+  const loadModalNestedRows = useMemo(
+    () => buildLoadModalNestedRows(dashboardGroups, savedDashboards),
+    [dashboardGroups, savedDashboards]
+  );
+
+  const syncDisabled = useMemo(
+    () =>
+      !isOwner ||
+      !dashboardServerId ||
+      isReadOnly ||
+      pendingCollaboratorSync === false,
+    [isOwner, dashboardServerId, isReadOnly, pendingCollaboratorSync]
+  );
+
+  /** Short label for shared access (owner uses full editor experience; no badge). */
+  const accessModeLabel = useMemo(() => {
+    if (!dashboardServerId || isOwner) return '';
+    if (dashboardEffectiveRole === 'Viewer') return 'Viewer · view only';
+    if (dashboardEffectiveRole === 'Editor') return 'Editor · shared';
+    return '';
+  }, [dashboardServerId, isOwner, dashboardEffectiveRole]);
 
   // const [copilotOpen, setCopilotOpen] = useState(false);
   const debounceTimerRef = useRef(null);
@@ -96,7 +333,6 @@ const BiDashboard = () => {
   const startRightWidthRef = useRef(rightSidebarWidth);
 
   const selectedChart = charts.find((c) => c.id === selectedChartId);
-  console.log('selectedChart STORAGE_KEY', STORAGE_KEY);
   // Keep stable callback identity: ChartItem emits rect changes via an effect,
   // and an unstable onLayoutChange prop can cause a render -> effect -> dispatch loop.
   const handleCanvasLayoutChange = useCallback(
@@ -120,6 +356,48 @@ const BiDashboard = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!dashboardServerId) {
+      setDashboardOwnerId(null);
+      setPendingCollaboratorSync(undefined);
+      return;
+    }
+    let cancelled = false;
+    getDashboardById(dashboardServerId)
+      .then((res) => {
+        if (cancelled || !isHttpSuccessStatus(res.status)) return;
+        const data = res.data;
+        if (data?.userId != null) setDashboardOwnerId(String(data.userId));
+        if (typeof data?.pendingCollaboratorSync === 'boolean') {
+          setPendingCollaboratorSync(data.pendingCollaboratorSync);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [dashboardServerId]);
+
+  useEffect(() => {
+    if (!dashboardServerId || !isOwner) return undefined;
+    const refresh = () => {
+      getDashboardById(dashboardServerId).then((res) => {
+        if (!isHttpSuccessStatus(res.status) || !res.data) return;
+        const d = res.data;
+        if (typeof d.pendingCollaboratorSync === 'boolean') {
+          setPendingCollaboratorSync(d.pendingCollaboratorSync);
+        }
+      });
+    };
+    const interval = setInterval(refresh, 45000);
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [dashboardServerId, isOwner]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +489,10 @@ const BiDashboard = () => {
   // Debounced collection update
   const handleCollectionChange = useCallback(
     (value) => {
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+        return;
+      }
       setCollectionInput(value);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
@@ -219,7 +501,7 @@ const BiDashboard = () => {
         dispatch(setCollection(value));
       }, 500);
     },
-    [dispatch]
+    [dispatch, isReadOnly]
   );
 
   const handleFieldsLoaded = useCallback((data) => {
@@ -243,6 +525,11 @@ const BiDashboard = () => {
   // File upload handler - uploads data to backend and creates collection
   const handleFileUpload = useCallback(
     async (event) => {
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
       const file = event.target.files?.[0];
       if (!file) return;
 
@@ -312,6 +599,21 @@ const BiDashboard = () => {
               validLayouts.lg = items;
               validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
               validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
+            }
+
+            // Preserve pixel rects if present (ChartCanvas uses layouts.rects).
+            const savedRects = loadedLayouts?.rects;
+            if (
+              savedRects &&
+              typeof savedRects === 'object' &&
+              !Array.isArray(savedRects)
+            ) {
+              const rectsOut = {};
+              for (const id of chartIds) {
+                if (savedRects[id]) rectsOut[id] = savedRects[id];
+              }
+              if (Object.keys(rectsOut).length > 0)
+                validLayouts.rects = rectsOut;
             }
 
             const chartsWithIds = loadedCharts.map((c, idx) => ({
@@ -394,8 +696,13 @@ const BiDashboard = () => {
             ? FORMAT_UPLOAD_REPLACED(result.collection, result.recordCount || 0)
             : FORMAT_UPLOAD_NEW(result.recordCount || 0, result.collection);
 
+          updateMessage({
+            type: 'success',
+            text: statusMsg,
+            key: 'upload-data',
+            duration: 2.5,
+          });
           setSaveStatus(statusMsg);
-          setTimeout(() => setSaveStatus(''), 3000);
         } else {
           setSaveStatus(BI_UI.UPLOAD_NO_COLLECTION);
           setTimeout(() => setSaveStatus(''), 3000);
@@ -410,11 +717,15 @@ const BiDashboard = () => {
         }
       }
     },
-    [dispatch, handleFieldsLoaded]
+    [dispatch, handleFieldsLoaded, isReadOnly]
   );
 
   const handleAddChart = useCallback(
     ({ dimension, measureField, measureOp }) => {
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+        return;
+      }
       // Prevent adding chart if no collection is selected
       if (!collection || !collection.trim()) {
         setSaveStatus(BI_UI.SELECT_COLLECTION_FIRST);
@@ -434,14 +745,18 @@ const BiDashboard = () => {
         })
       );
     },
-    [dispatch, collection, recordCount]
+    [dispatch, collection, recordCount, isReadOnly]
   );
 
   const handleUpdateChart = useCallback(
     (id, updates) => {
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+        return;
+      }
       dispatch(updateChart({ id, updates }));
     },
-    [dispatch]
+    [dispatch, isReadOnly]
   );
 
   const handleRequestRemoveChart = useCallback((id) => {
@@ -449,11 +764,16 @@ const BiDashboard = () => {
   }, []);
 
   const handleConfirmRemoveChart = useCallback(() => {
+    if (isReadOnly) {
+      errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+      setChartToDeleteId(null);
+      return;
+    }
     if (chartToDeleteId) {
       dispatch(removeChart(chartToDeleteId));
       setChartToDeleteId(null);
     }
-  }, [chartToDeleteId, dispatch]);
+  }, [chartToDeleteId, dispatch, isReadOnly]);
 
   const handleCancelRemoveChart = useCallback(() => {
     setChartToDeleteId(null);
@@ -522,9 +842,13 @@ const BiDashboard = () => {
 
   const handleDuplicateChart = useCallback(
     (chart) => {
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+        return;
+      }
       dispatch(duplicateChart(chart));
     },
-    [dispatch]
+    [dispatch, isReadOnly]
   );
 
   const handleRefreshChart = useCallback(
@@ -559,6 +883,15 @@ const BiDashboard = () => {
   );
 
   const handleSaveDashboard = useCallback(async () => {
+    if (isReadOnly) {
+      errorMessage(BI_UI.READ_ONLY_CANNOT_SAVE);
+      return;
+    }
+    if (!Array.isArray(charts) || charts.length === 0) {
+      setSaveStatus(BI_UI.NO_CHARTS_IN_DASHBOARD);
+      setTimeout(() => setSaveStatus(''), 2500);
+      return;
+    }
     const name = (dashboardName && dashboardName.trim()) || 'My Dashboard';
     const payloadForCompare = dashboardUtils.buildDashboardSavePayload({
       name,
@@ -576,12 +909,13 @@ const BiDashboard = () => {
     }
 
     setSaveStatus(BI_UI.SAVING);
-    setShareUrl('');
-    setDashboardServerId(null);
-    setDashboardEffectiveRole(null);
+    const previousDashboardId = dashboardServerId
+      ? String(dashboardServerId)
+      : undefined;
     try {
       const res = await saveDashboard({
         ...payloadForCompare,
+        ...(previousDashboardId ? { previousDashboardId } : {}),
         // server doesn't need collection currently, but harmless to send
         updatedAt: new Date().toISOString(),
       });
@@ -590,21 +924,25 @@ const BiDashboard = () => {
           const json = res.data;
           const id = json?.id || json?._id;
           if (id) {
-            if (json.name) setDashboardName(json.name);
+            const displayName = json.baseName
+              ? String(json.baseName).trim()
+              : deriveBaseName(json);
+            setDashboardName(displayName);
             localStorage.setItem(
               STORAGE_KEY,
               JSON.stringify({
                 charts,
                 layouts,
                 collection,
-                dashboardName: name,
+                dashboardName: displayName,
                 logo: dashboardLogo || undefined,
               })
             );
             setSaveStatus(BI_UI.SAVED);
             const base =
               typeof window !== 'undefined' ? window.location.origin : '';
-            setDashboardServerId(id);
+            setDashboardServerId(String(id));
+            if (json.userId != null) setDashboardOwnerId(String(json.userId));
             setDashboardEffectiveRole('Editor');
             setShareUrl(`${base}/dashboard/${id}`);
             getDashboardsList()
@@ -619,8 +957,6 @@ const BiDashboard = () => {
               /* ignore */
             }
           } else {
-            setDashboardServerId(null);
-            setDashboardEffectiveRole(null);
             localStorage.setItem(
               STORAGE_KEY,
               JSON.stringify({
@@ -639,8 +975,6 @@ const BiDashboard = () => {
             }
           }
         } catch {
-          setDashboardServerId(null);
-          setDashboardEffectiveRole(null);
           localStorage.setItem(
             STORAGE_KEY,
             JSON.stringify({
@@ -659,8 +993,6 @@ const BiDashboard = () => {
           }
         }
       } else {
-        setDashboardServerId(null);
-        setDashboardEffectiveRole(null);
         localStorage.setItem(
           STORAGE_KEY,
           JSON.stringify({
@@ -679,8 +1011,6 @@ const BiDashboard = () => {
         }
       }
     } catch {
-      setDashboardServerId(null);
-      setDashboardEffectiveRole(null);
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
@@ -706,6 +1036,8 @@ const BiDashboard = () => {
     dashboardName,
     dashboardLogo,
     lastSavedHash,
+    isReadOnly,
+    dashboardServerId,
   ]);
 
   const handleShare = useCallback(() => {
@@ -719,7 +1051,12 @@ const BiDashboard = () => {
   }, [dashboardServerId, dashboardEffectiveRole]);
 
   const handleLoadDashboard = useCallback(() => {
+    if (isReadOnly) {
+      errorMessage(BI_UI.READ_ONLY_CANNOT_LOAD_CONFIGURATION);
+      return;
+    }
     setDashboardServerId(null);
+    setDashboardOwnerId(null);
     setDashboardEffectiveRole(null);
     setShareUrl('');
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -779,6 +1116,20 @@ const BiDashboard = () => {
             validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
           }
 
+          // Preserve pixel rects if present (ChartCanvas uses layouts.rects).
+          const savedRects = savedLayouts?.rects;
+          if (
+            savedRects &&
+            typeof savedRects === 'object' &&
+            !Array.isArray(savedRects)
+          ) {
+            const rectsOut = {};
+            for (const id of chartIds) {
+              if (savedRects[id]) rectsOut[id] = savedRects[id];
+            }
+            if (Object.keys(rectsOut).length > 0) validLayouts.rects = rectsOut;
+          }
+
           // Ensure all charts have IDs
           const chartsWithIds = savedCharts.map((c, idx) => ({
             ...c,
@@ -828,10 +1179,12 @@ const BiDashboard = () => {
         .then((res) => res.data)
         .then((list) => {
           if (list?.length) {
-            const latest = list[list.length - 1];
+            const latest = list[0];
             const latestId = latest?._id || latest?.id;
             if (latestId) {
               setDashboardServerId(String(latestId));
+              if (latest.userId != null)
+                setDashboardOwnerId(String(latest.userId));
               setDashboardEffectiveRole(latest?.effectiveRole || null);
               const base =
                 typeof window !== 'undefined' ? window.location.origin : '';
@@ -884,6 +1237,21 @@ const BiDashboard = () => {
                 validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
               }
 
+              // Preserve pixel rects if present (ChartCanvas uses layouts.rects).
+              const savedRects = latest?.layouts?.rects;
+              if (
+                savedRects &&
+                typeof savedRects === 'object' &&
+                !Array.isArray(savedRects)
+              ) {
+                const rectsOut = {};
+                for (const id of chartIds) {
+                  if (savedRects[id]) rectsOut[id] = savedRects[id];
+                }
+                if (Object.keys(rectsOut).length > 0)
+                  validLayouts.rects = rectsOut;
+              }
+
               const chartsWithIds = cfg.map((c, idx) => ({
                 ...c,
                 id: c.id || chartIds[idx],
@@ -901,6 +1269,7 @@ const BiDashboard = () => {
                 })
               );
               setCollectionInput(loadedCollection);
+              setDashboardName(deriveBaseName(latest));
               try {
                 const payloadForCompare =
                   dashboardUtils.buildDashboardSavePayload({
@@ -930,7 +1299,7 @@ const BiDashboard = () => {
           setTimeout(() => setSaveStatus(''), 2000);
         });
     }
-  }, [dispatch, collection]);
+  }, [dispatch, collection, isReadOnly]);
 
   const appendRecentDashboardId = useCallback((loadedId) => {
     if (!loadedId) return;
@@ -948,10 +1317,59 @@ const BiDashboard = () => {
       return next;
     });
   }, []);
-
+  const applyServerDashboardPayload = useCallback(
+    (data, { serverId, skipRecent = false } = {}) => {
+      const {
+        chartsWithIds,
+        validLayouts,
+        collection: loadedCollection,
+      } = dashboardUtils.buildLayoutsAndChartsFromSaved(data);
+      if (chartsWithIds.length === 0) return false;
+      dispatch(
+        loadDashboard({
+          charts: chartsWithIds,
+          layouts: validLayouts,
+          collection: loadedCollection,
+        })
+      );
+      setCollectionInput(loadedCollection);
+      if (serverId) {
+        setDashboardServerId(String(serverId));
+        setDashboardEffectiveRole(data?.effectiveRole || null);
+        const base =
+          typeof window !== 'undefined' ? window.location.origin : '';
+        setShareUrl(`${base}/dashboard/${serverId}`);
+        if (!skipRecent) appendRecentDashboardId(serverId);
+      }
+      try {
+        const payloadForCompare = buildDashboardSavePayload({
+          name: data?.name || 'My Dashboard',
+          collection: loadedCollection,
+          charts: chartsWithIds,
+          layouts: validLayouts,
+          logo: data?.logo,
+        });
+        const h = stableStringify(payloadForCompare);
+        setLastSavedHash(h);
+        localStorage.setItem(LAST_SAVED_HASH_KEY, h);
+      } catch {
+        /* ignore */
+      }
+      if (data.name) setDashboardName(data.name);
+      if (data.logo != null && typeof data.logo === 'string')
+        setDashboardLogo(data.logo);
+      else setDashboardLogo(null);
+      return true;
+    },
+    [dispatch, appendRecentDashboardId]
+  );
   const handleLoadDashboardById = useCallback(
     (id) => {
       if (!id) return;
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_CANNOT_SWITCH_DASHBOARD);
+        return;
+      }
       setSaveStatus(BI_UI.LOADING);
       getDashboardById(id)
         .then((res) => {
@@ -985,7 +1403,13 @@ const BiDashboard = () => {
           );
           setCollectionInput(loadedCollection);
           setDashboardServerId(String(id));
+          if (data.userId != null) setDashboardOwnerId(String(data.userId));
           setDashboardEffectiveRole(data?.effectiveRole || null);
+          if (typeof data?.pendingCollaboratorSync === 'boolean') {
+            setPendingCollaboratorSync(data.pendingCollaboratorSync);
+          } else {
+            setPendingCollaboratorSync(undefined);
+          }
           const base =
             typeof window !== 'undefined' ? window.location.origin : '';
           setShareUrl(`${base}/dashboard/${id}`);
@@ -1003,7 +1427,7 @@ const BiDashboard = () => {
           } catch {
             /* ignore */
           }
-          if (data.name) setDashboardName(data.name);
+          setDashboardName(deriveBaseName(data));
           if (data.logo != null && typeof data.logo === 'string')
             setDashboardLogo(data.logo);
           else setDashboardLogo(null);
@@ -1016,8 +1440,83 @@ const BiDashboard = () => {
           setTimeout(() => setSaveStatus(''), 2000);
         });
     },
-    [dispatch, appendRecentDashboardId]
+    [dispatch, appendRecentDashboardId, isReadOnly]
   );
+  const handleClearPlayground = useCallback(() => {
+    if (!window.confirm('Reset the playground? Unsaved changes will be lost.'))
+      return;
+    dispatch(resetDashboard());
+    setCollectionInput('');
+    setDashboardName('My Dashboard');
+    setDashboardLogo(null);
+    setDashboardServerId(null);
+    //
+    setDashboardEffectiveRole(null);
+    setPendingCollaboratorSync(undefined);
+    setShareUrl('');
+    setLastSavedHash('');
+    try {
+      localStorage.removeItem(LAST_SAVED_HASH_KEY);
+    } catch {
+      /* ignore */
+    }
+    infoMessage(BI_UI.PLAYGROUND_CLEARED);
+  }, [dispatch]);
+
+  const handleSyncShared = useCallback(async () => {
+    if (!dashboardServerId) {
+      infoMessage(BI_UI.LOAD_OR_SAVE_DASHBOARD_FIRST);
+      return;
+    }
+    loadingMessage(BI_UI.SYNCING_LATEST, 'sync-dash');
+    try {
+      const res = await syncDashboard(dashboardServerId);
+      if (!isHttpSuccessStatus(res.status)) {
+        throw new Error(`Sync failed (${res.status})`);
+      }
+      const data = res?.data || {};
+      const dashboardPayload =
+        data &&
+        typeof data.dashboard === 'object' &&
+        !Array.isArray(data.dashboard)
+          ? data.dashboard
+          : data;
+      const ok = applyServerDashboardPayload(dashboardPayload, {
+        serverId: dashboardServerId,
+        skipRecent: true,
+      });
+      if (!ok) {
+        updateMessage({
+          type: 'warning',
+          text: BI_UI.NO_CHARTS_IN_SYNCED_DASHBOARD,
+          key: 'sync-dash',
+          duration: 3,
+        });
+        return;
+      }
+      const v =
+        dashboardPayload?.currentVersion != null
+          ? dashboardPayload.currentVersion
+          : dashboardPayload?.versionNumber;
+      const statusText =
+        typeof data?.message === 'string' && data.message.trim()
+          ? data.message.trim()
+          : 'Synced to latest';
+      updateMessage({
+        type: 'success',
+        text: v != null && Number(v) > 0 ? `${statusText} (v${v})` : statusText,
+        key: 'sync-dash',
+        duration: 2,
+      });
+    } catch (e) {
+      updateMessage({
+        type: 'error',
+        text: e?.message || BI_UI.SYNC_FAILED,
+        key: 'sync-dash',
+        duration: 3,
+      });
+    }
+  }, [dashboardServerId, applyServerDashboardPayload]);
 
   const handlePrintDashboard = useCallback(async () => {
     setSaveStatus(BI_UI.PREPARING_PRINT);
@@ -1113,7 +1612,6 @@ const BiDashboard = () => {
       setSaveStatus(BI_UI.PRINT_DIALOG_OPENED);
       setTimeout(() => setSaveStatus(''), 2000);
     } catch (error) {
-      console.error('Print failed', error);
       setSaveStatus(BI_UI.PRINT_FAILED);
       setTimeout(() => setSaveStatus(''), 3000);
     }
@@ -1252,7 +1750,7 @@ const BiDashboard = () => {
             );
             textLeft = margin + logoW + 4;
           } catch (err) {
-            console.warn('PDF logo draw failed', err);
+            // ignore
           }
         }
         pdf.setFontSize(11);
@@ -1417,9 +1915,7 @@ const BiDashboard = () => {
               'FAST'
             );
             textLeft = margin + logoW + 4;
-          } catch (err) {
-            console.warn('PDF logo draw failed', err);
-          }
+          } catch (err) {}
         }
         pdfInstance.setFontSize(9);
         pdfInstance.setFont('helvetica', 'bold');
@@ -1638,7 +2134,6 @@ const BiDashboard = () => {
             ? cfgFallback
             : mappedItems;
         } catch (err) {
-          console.warn('Legend extraction failed:', err);
           return fallbackFromConfig();
         }
       };
@@ -1966,7 +2461,6 @@ const BiDashboard = () => {
             foreignObjectRendering: false,
           });
         } catch (captureErr) {
-          console.warn(`Chart ${i + 1} capture failed, skipping:`, captureErr);
           continue;
         }
 
@@ -2032,7 +2526,6 @@ const BiDashboard = () => {
       setSaveStatus(FORMAT_PDF_DOWNLOADED_CHARTS(chartCards.length));
       setTimeout(() => setSaveStatus(''), 3000);
     } catch (error) {
-      console.error('PDF export failed:', error);
       setSaveStatus(error.message || BI_UI.PDF_EXPORT_FAILED);
       setTimeout(() => setSaveStatus(''), 3000);
     } finally {
@@ -2074,6 +2567,11 @@ const BiDashboard = () => {
         }}
         aria-hidden
         onChange={(e) => {
+          if (isReadOnly) {
+            errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+            e.target.value = '';
+            return;
+          }
           const file = e.target?.files?.[0];
           if (!file || !file.type.startsWith('image/')) return;
           const reader = new FileReader();
@@ -2106,8 +2604,12 @@ const BiDashboard = () => {
             user={me}
             loading={meLoading}
             dashboardLogo={dashboardLogo}
-            onSetDashboardImage={() => logoInputRef.current?.click()}
-            onClearDashboardImage={() => setDashboardLogo(null)}
+            onSetDashboardImage={
+              isReadOnly ? undefined : () => logoInputRef.current?.click()
+            }
+            onClearDashboardImage={
+              isReadOnly ? undefined : () => setDashboardLogo(null)
+            }
             onLogoutClick={handleLogoutClick}
           />
         </div>
@@ -2121,18 +2623,20 @@ const BiDashboard = () => {
         onExportPDF={handleDownloadPDF}
         onPrint={handlePrintDashboard}
         onSave={handleSaveDashboard}
+        canSave={Array.isArray(charts) && charts.length > 0}
         onLoad={handleLoadDashboard}
         onShare={handleShare}
         shareUrl={shareUrl}
-        shareDisabled={dashboardEffectiveRole !== 'Editor'}
+        shareDisabled={isReadOnly || dashboardEffectiveRole !== 'Editor'}
+        readOnly={isReadOnly}
+        accessModeLabel={accessModeLabel}
         saveStatus={saveStatus}
         fileInputRef={fileInputRef}
         recordCount={recordCount}
         exportPdfInProgress={exportPdfInProgress}
         onViewData={() => setViewDataOpen(true)}
         dashboardName={dashboardName}
-        onDashboardNameChange={setDashboardName}
-        savedDashboards={savedDashboards}
+        onDashboardNameChange={isReadOnly ? undefined : setDashboardName}
         recentDashboardIds={recentDashboardIds}
         onLoadDashboardById={handleLoadDashboardById}
         dataFilter={dataFilter}
@@ -2146,6 +2650,10 @@ const BiDashboard = () => {
         onTogglePlaygroundMaximize={() =>
           setIsPlaygroundMaximized((prev) => !prev)
         }
+        loadModalNestedRows={loadModalNestedRows}
+        onSyncShared={isOwner ? handleSyncShared : undefined}
+        syncDisabled={syncDisabled}
+        onClearPlayground={handleClearPlayground}
       />
 
       <div className={`${styles.biMain} bi-main`}>
@@ -2155,7 +2663,7 @@ const BiDashboard = () => {
         >
           <FieldList
             collection={collection}
-            onAddChart={handleAddChart}
+            onAddChart={isReadOnly ? undefined : handleAddChart}
             onFieldsLoaded={handleFieldsLoaded}
           />
         </aside>
@@ -2177,12 +2685,13 @@ const BiDashboard = () => {
             charts={charts}
             selectedChartId={selectedChartId}
             onSelect={handleSelectChart}
-            onLayoutChange={handleCanvasLayoutChange}
+            readOnly={isReadOnly}
+            onLayoutChange={isReadOnly ? undefined : handleCanvasLayoutChange}
             savedLayouts={layouts}
             onRefresh={handleRefreshChart}
-            onRemove={handleRequestRemoveChart}
-            onDuplicate={handleDuplicateChart}
-            onChartUpdate={handleUpdateChart}
+            onRemove={isReadOnly ? undefined : handleRequestRemoveChart}
+            onDuplicate={isReadOnly ? undefined : handleDuplicateChart}
+            onChartUpdate={isReadOnly ? undefined : handleUpdateChart}
             globalFilter={dataFilter}
           />
         </main>
@@ -2203,16 +2712,22 @@ const BiDashboard = () => {
           style={{ width: rightSidebarWidth, minWidth: 200, maxWidth: 600 }}
         >
           <ConfigPanel
-            config={selectedChart}
+            config={isReadOnly ? null : selectedChart}
             fields={fields}
             layouts={layouts}
             recordCount={recordCount}
-            onUpdate={(updates) =>
-              selectedChart && handleUpdateChart(selectedChart.id, updates)
+            onUpdate={
+              isReadOnly
+                ? undefined
+                : (updates) =>
+                    selectedChart &&
+                    handleUpdateChart(selectedChart.id, updates)
             }
-            onRemove={handleRequestRemoveChart}
-            onLayoutSizeChange={(id, size) =>
-              dispatch(updateChartLayout({ id, ...size }))
+            onRemove={isReadOnly ? undefined : handleRequestRemoveChart}
+            onLayoutSizeChange={
+              isReadOnly
+                ? undefined
+                : (id, size) => dispatch(updateChartLayout({ id, ...size }))
             }
           />
         </aside>
