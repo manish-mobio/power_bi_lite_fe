@@ -1,7 +1,3 @@
-/**
- * Power BI Lite - Dashboard Toolbar
- * Clean, professional menu bar with icons + tooltips (dashboard-style UI)
- */
 import React, {
   useState,
   useRef,
@@ -25,6 +21,8 @@ import {
   AiOutlineCompress,
   AiOutlineClose,
   AiOutlineSearch,
+  AiOutlineSync,
+  AiOutlineClear,
 } from 'react-icons/ai';
 import { getBiCollections } from '@/services/biService';
 import styles from './DashboardToolbar.module.css';
@@ -34,7 +32,71 @@ import {
   LOAD_ROW_HEIGHT,
 } from '@/utils/constants';
 
-function LoadDashboardVirtualList({ items, recentIdsSet, onSelectRow }) {
+function sortNestedBlocksByRecent(rows, recentIdRank) {
+  const r = Array.isArray(rows) ? rows : [];
+  const blocks = [];
+  let i = 0;
+  while (i < r.length) {
+    if (r[i].kind !== 'folder') {
+      i += 1;
+      continue;
+    }
+    const start = i;
+    i += 1;
+    while (i < r.length && r[i].kind === 'version') i += 1;
+    blocks.push(r.slice(start, i));
+  }
+  blocks.sort((a, b) => {
+    const fa = a[0];
+    const fb = b[0];
+    const ida = String(fa.loadId);
+    const idb = String(fb.loadId);
+    const ra = recentIdRank.has(ida) ? recentIdRank.get(ida) : 1e9;
+    const rb = recentIdRank.has(idb) ? recentIdRank.get(idb) : 1e9;
+    if (ra !== rb) return ra - rb;
+    const ta = fa.latestUpdatedAt ? new Date(fa.latestUpdatedAt).getTime() : 0;
+    const tb = fb.latestUpdatedAt ? new Date(fb.latestUpdatedAt).getTime() : 0;
+    return tb - ta;
+  });
+  return blocks.flat();
+}
+
+function filterNestedRows(rows, searchRaw) {
+  const r = Array.isArray(rows) ? rows : [];
+  const q = String(searchRaw || '')
+    .trim()
+    .toLowerCase();
+  if (!q) return r;
+  const out = [];
+  let i = 0;
+  while (i < r.length) {
+    if (r[i].kind !== 'folder') {
+      i += 1;
+      continue;
+    }
+    const folder = r[i];
+    const children = [];
+    let j = i + 1;
+    while (j < r.length && r[j].kind === 'version') children.push(r[j++]);
+    const parentMatch = String(folder.label || '')
+      .toLowerCase()
+      .includes(q);
+    const matchedChildren = children.filter((c) =>
+      String(c.label || '')
+        .toLowerCase()
+        .includes(q)
+    );
+    if (parentMatch) {
+      out.push(folder, ...children);
+    } else if (matchedChildren.length) {
+      out.push(folder, ...matchedChildren);
+    }
+    i = j;
+  }
+  return out;
+}
+
+function LoadDashboardNestedList({ items, recentIdsSet, onSelectRow }) {
   const [scrollTop, setScrollTop] = useState(0);
   const totalHeight = items.length * LOAD_ROW_HEIGHT;
   const start = Math.max(
@@ -61,18 +123,20 @@ function LoadDashboardVirtualList({ items, recentIdsSet, onSelectRow }) {
             width: '100%',
           }}
         >
-          {items.slice(start, end).map((d, sliceIdx) => {
+          {items.slice(start, end).map((row, sliceIdx) => {
             const idx = start + sliceIdx;
-            const rowId = String(d._id || d.id);
-            const isRecent = recentIdsSet.has(rowId);
-            const dateStr = d.updatedAt
-              ? new Date(d.updatedAt).toLocaleDateString()
+            const isFolder = row.kind === 'folder';
+            const recentKey = String(row.loadId);
+            const isRecent = recentIdsSet.has(recentKey);
+            const dateRaw = isFolder ? row.latestUpdatedAt : null;
+            const dateStr = dateRaw
+              ? new Date(dateRaw).toLocaleDateString()
               : null;
             return (
               <button
-                key={rowId}
+                key={row.rowKey}
                 type='button'
-                className={`${styles.loadModalRow} ${isRecent ? styles.loadModalRowRecent : ''}`}
+                className={`${styles.loadModalRow} ${isRecent ? styles.loadModalRowRecent : ''} ${isFolder ? styles.loadModalRowFolder : styles.loadModalRowVersion}`}
                 style={{
                   position: 'absolute',
                   top: idx * LOAD_ROW_HEIGHT,
@@ -81,14 +145,22 @@ function LoadDashboardVirtualList({ items, recentIdsSet, onSelectRow }) {
                   height: LOAD_ROW_HEIGHT,
                   boxSizing: 'border-box',
                 }}
-                onClick={() => onSelectRow(d)}
+                onClick={() => onSelectRow(row)}
               >
                 <span className={styles.loadModalRowMain}>
-                  <div className={styles.loadModalRowName}>
-                    {d.name || 'Unnamed'}
+                  <div
+                    className={
+                      isFolder
+                        ? styles.loadModalRowName
+                        : styles.loadModalRowVersionLabel
+                    }
+                  >
+                    {row.label}
                   </div>
-                  {dateStr ? (
-                    <div className={styles.loadModalRowMeta}>{dateStr}</div>
+                  {isFolder && dateStr ? (
+                    <div className={styles.loadModalRowMeta}>
+                      Updated {dateStr}
+                    </div>
                   ) : null}
                 </span>
                 {isRecent ? (
@@ -103,7 +175,7 @@ function LoadDashboardVirtualList({ items, recentIdsSet, onSelectRow }) {
   );
 }
 
-LoadDashboardVirtualList.propTypes = {
+LoadDashboardNestedList.propTypes = {
   items: PropTypes.array.isRequired,
   recentIdsSet: PropTypes.instanceOf(Set).isRequired,
   onSelectRow: PropTypes.func.isRequired,
@@ -206,13 +278,15 @@ const DashboardToolbar = ({
   onShare,
   shareUrl,
   shareDisabled,
+  readOnly = false,
+  accessModeLabel = '',
+  canSave = true,
   saveStatus,
   fileInputRef,
   recordCount,
   onViewData,
   dashboardName,
   onDashboardNameChange,
-  savedDashboards,
   recentDashboardIds = [],
   onLoadDashboardById,
   dataFilter,
@@ -220,6 +294,10 @@ const DashboardToolbar = ({
   dateFields = [],
   isPlaygroundMaximized,
   onTogglePlaygroundMaximize,
+  loadModalNestedRows = [],
+  onSyncShared,
+  syncDisabled = true,
+  onClearPlayground,
 }) => {
   const [collections, setCollections] = useState([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
@@ -325,43 +403,37 @@ const DashboardToolbar = ({
     [recentDashboardIds]
   );
 
-  const filteredOrderedDashboards = useMemo(() => {
-    const list = Array.isArray(savedDashboards) ? savedDashboards : [];
-    const q = debouncedLoadSearch.toLowerCase();
-    const filtered =
-      q.length > 0
-        ? list.filter((d) =>
-            String(d.name || 'Unnamed')
-              .toLowerCase()
-              .includes(q)
-          )
-        : list;
-    return [...filtered].sort((a, b) => {
-      const ida = String(a._id || a.id);
-      const idb = String(b._id || b.id);
-      const ra = recentIdRank.has(ida) ? recentIdRank.get(ida) : 1e9;
-      const rb = recentIdRank.has(idb) ? recentIdRank.get(idb) : 1e9;
-      if (ra !== rb) return ra - rb;
-      const ta = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-      const tb = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-      return tb - ta;
-    });
-  }, [savedDashboards, debouncedLoadSearch, recentIdRank]);
+  const orderedNestedRows = useMemo(() => {
+    const rows = Array.isArray(loadModalNestedRows) ? loadModalNestedRows : [];
+    return sortNestedBlocksByRecent(rows, recentIdRank);
+  }, [loadModalNestedRows, recentIdRank]);
+
+  const filteredNestedLoadRows = useMemo(
+    () => filterNestedRows(orderedNestedRows, debouncedLoadSearch),
+    [orderedNestedRows, debouncedLoadSearch]
+  );
+
+  const loadModalFolderCount = useMemo(
+    () =>
+      (Array.isArray(loadModalNestedRows) ? loadModalNestedRows : []).filter(
+        (r) => r.kind === 'folder'
+      ).length,
+    [loadModalNestedRows]
+  );
 
   const loadModalEmptyMessage = useMemo(() => {
-    const rawLen = Array.isArray(savedDashboards) ? savedDashboards.length : 0;
-    if (rawLen === 0) {
+    if (loadModalFolderCount === 0) {
       return 'No saved dashboards yet. Save a dashboard to see it listed here.';
     }
     if (debouncedLoadSearch.length > 0) {
       return 'No dashboards found matching your search.';
     }
     return 'No dashboards found.';
-  }, [savedDashboards, debouncedLoadSearch]);
+  }, [loadModalFolderCount, debouncedLoadSearch]);
 
-  const handlePickSavedDashboard = useCallback(
-    (d) => {
-      onLoadDashboardById(d._id || d.id);
+  const handlePickLoadRow = useCallback(
+    (row) => {
+      if (row?.loadId) onLoadDashboardById(String(row.loadId));
       setLoadModalOpen(false);
     },
     [onLoadDashboardById]
@@ -451,8 +523,14 @@ const DashboardToolbar = ({
   const updateDraft = (updates) =>
     setFilterDraft((d) => ({ ...d, ...updates }));
 
+  const toolbarRestricted = Boolean(readOnly);
+
   return (
-    <header className={`${styles.toolbar} bi-dashboard-toolbar`} role='banner'>
+    <header
+      className={`${styles.toolbar} bi-dashboard-toolbar ${toolbarRestricted ? styles.toolbarRestricted : ''}`}
+      role='banner'
+      data-access-restricted={toolbarRestricted ? 'true' : undefined}
+    >
       <div className={styles.toolbarLeft}>
         <div className={styles.collectionWrap}>
           <label
@@ -461,6 +539,11 @@ const DashboardToolbar = ({
           >
             Collection
           </label>
+          {accessModeLabel ? (
+            <span className={styles.accessModeBadge} title={accessModeLabel}>
+              {accessModeLabel}
+            </span>
+          ) : null}
           <div className={styles.collectionDropdownWrap} ref={dropdownRef}>
             <select
               id='bi-toolbar-collection'
@@ -468,6 +551,12 @@ const DashboardToolbar = ({
               value={collectionInput || ''}
               onChange={(e) => onCollectionChange(e.target.value)}
               aria-label='Collection name'
+              disabled={readOnly}
+              title={
+                readOnly
+                  ? 'Read-only (Viewer): collection cannot be changed'
+                  : 'Choose data collection'
+              }
             >
               <option value=''>Select a collection</option>
               {collections.map((name) => (
@@ -506,6 +595,7 @@ const DashboardToolbar = ({
               value={dashboardName ?? ''}
               onChange={(e) => onDashboardNameChange(e.target.value)}
               aria-label='Dashboard name for save/export'
+              disabled={readOnly}
             />
           </div>
         )}
@@ -533,6 +623,12 @@ const DashboardToolbar = ({
             label='Upload'
             onClick={() => fileInputRef?.current?.click()}
             variant='success'
+            disabled={readOnly}
+            title={
+              readOnly
+                ? 'Read-only (Viewer): upload disabled'
+                : 'Upload JSON or CSV data'
+            }
           />
         </div>
 
@@ -725,6 +821,14 @@ const DashboardToolbar = ({
             label='Save'
             onClick={onSave}
             variant='primary'
+            disabled={readOnly || !canSave}
+            title={
+              readOnly
+                ? 'Read-only (Viewer): save disabled'
+                : !canSave
+                  ? 'Add at least one chart before saving'
+                  : 'Save dashboard'
+            }
           />
           {onLoadDashboardById ? (
             <>
@@ -732,7 +836,12 @@ const DashboardToolbar = ({
                 type='button'
                 className={styles.toolbarBtn}
                 onClick={() => setLoadModalOpen(true)}
-                title='Open saved dashboards'
+                disabled={readOnly}
+                title={
+                  readOnly
+                    ? 'Read-only (Viewer): loading another dashboard is disabled'
+                    : 'Open saved dashboards'
+                }
                 aria-haspopup='dialog'
                 aria-expanded={loadModalOpen}
               >
@@ -781,7 +890,7 @@ const DashboardToolbar = ({
                           htmlFor='bi-load-dashboard-search'
                           className={styles.visuallyHidden}
                         >
-                          Search dashboards by name
+                          Search dashboards or versions
                         </label>
                         <div
                           style={{
@@ -805,7 +914,7 @@ const DashboardToolbar = ({
                             ref={loadSearchInputRef}
                             type='search'
                             className={styles.loadModalSearch}
-                            placeholder='Search by name…'
+                            placeholder='Search by name or version…'
                             autoComplete='off'
                             value={loadSearchQuery}
                             onChange={(e) => setLoadSearchQuery(e.target.value)}
@@ -813,12 +922,12 @@ const DashboardToolbar = ({
                           />
                         </div>
                       </div>
-                      {filteredOrderedDashboards.length > 0 ? (
-                        <LoadDashboardVirtualList
+                      {filteredNestedLoadRows.length > 0 ? (
+                        <LoadDashboardNestedList
                           key={debouncedLoadSearch}
-                          items={filteredOrderedDashboards}
+                          items={filteredNestedLoadRows}
                           recentIdsSet={recentIdsSet}
-                          onSelectRow={handlePickSavedDashboard}
+                          onSelectRow={handlePickLoadRow}
                         />
                       ) : (
                         <div className={styles.loadModalListScroll}>
@@ -827,15 +936,6 @@ const DashboardToolbar = ({
                           </div>
                         </div>
                       )}
-                      {/* <div className={styles.loadModalFooter}>
-                        <button
-                          type='button'
-                          className={styles.loadModalFooterBtn}
-                          onClick={handleLoadFromBrowserOrLatest}
-                        >
-                          Load from this browser or latest on server
-                        </button>
-                      </div> */}
                     </div>
                   </div>,
                   document.body
@@ -850,6 +950,35 @@ const DashboardToolbar = ({
             />
           )}
         </div>
+
+        {onSyncShared && (
+          <div className={styles.toolbarGroup}>
+            <ToolbarButton
+              icon={AiOutlineSync}
+              label='Sync'
+              onClick={onSyncShared}
+              disabled={syncDisabled}
+              title={
+                syncDisabled
+                  ? 'Only the owner can merge collaborator edits into a new version'
+                  : 'Merge latest collaborator edits into a new version on your dashboard'
+              }
+            />
+          </div>
+        )}
+        {onClearPlayground && (
+          <ToolbarButton
+            icon={AiOutlineClear}
+            label='Clear'
+            onClick={onClearPlayground}
+            disabled={readOnly}
+            title={
+              readOnly
+                ? 'Read-only: clear disabled'
+                : 'Reset playground (unsaved work is lost)'
+            }
+          />
+        )}
 
         {onShare && (
           <div className={styles.toolbarGroup}>
@@ -893,13 +1022,15 @@ DashboardToolbar.propTypes = {
   onShare: PropTypes.func,
   shareUrl: PropTypes.string,
   shareDisabled: PropTypes.bool,
+  readOnly: PropTypes.bool,
+  accessModeLabel: PropTypes.string,
+  canSave: PropTypes.bool,
   saveStatus: PropTypes.string,
   fileInputRef: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
   recordCount: PropTypes.number,
   onViewData: PropTypes.func,
   dashboardName: PropTypes.string,
   onDashboardNameChange: PropTypes.func,
-  savedDashboards: PropTypes.array,
   recentDashboardIds: PropTypes.arrayOf(PropTypes.string),
   onLoadDashboardById: PropTypes.func,
   dataFilter: PropTypes.shape({
@@ -915,6 +1046,16 @@ DashboardToolbar.propTypes = {
   ),
   isPlaygroundMaximized: PropTypes.bool,
   onTogglePlaygroundMaximize: PropTypes.func,
+  loadModalNestedRows: PropTypes.arrayOf(
+    PropTypes.shape({
+      rowKey: PropTypes.string.isRequired,
+      kind: PropTypes.oneOf(['folder', 'version']).isRequired,
+      label: PropTypes.string.isRequired,
+      loadId: PropTypes.string.isRequired,
+    })
+  ),
+  onSyncShared: PropTypes.func,
+  syncDisabled: PropTypes.bool,
 };
 
 export default DashboardToolbar;

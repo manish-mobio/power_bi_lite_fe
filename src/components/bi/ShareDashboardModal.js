@@ -4,6 +4,7 @@ import { isHttpSuccessStatus } from '@/utils/statusCode';
 import { searchUsersRequest } from '@/services/authService';
 import { shareDashboard as postDashboardShare } from '@/services/biService';
 import styles from './ShareDashboardModal.module.css';
+import { loadingMessage, updateMessage } from '@/utils/commonFunctions';
 
 export default function ShareDashboardModal({
   open,
@@ -117,6 +118,7 @@ export default function ShareDashboardModal({
     if (!dashboardId) return;
     setSubmitError('');
     setSubmitting(true);
+    loadingMessage('Sharing dashboard…', 'share-dashboard');
     try {
       const payload = {
         shares: selected.map((s) => ({
@@ -136,6 +138,12 @@ export default function ShareDashboardModal({
         return;
       }
 
+      updateMessage({
+        type: 'success',
+        text: 'Dashboard shared',
+        key: 'share-dashboard',
+        duration: 2,
+      });
       onShared?.(data);
       onClose?.();
     } catch (e) {

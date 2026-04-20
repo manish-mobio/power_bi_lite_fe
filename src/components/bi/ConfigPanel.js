@@ -218,16 +218,6 @@ const ConfigPanel = ({
               </Option>
             ))}
           </Select>
-          {/* <select
-            value={config.type}
-            onChange={(e) => handleChange('type', e.target.value)}
-          >
-            {CHART_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {CHART_TYPE_LABELS[t] || t}
-              </option>
-            ))}
-          </select> */}
         </div>
 
         <div className='bi-config-row'>
@@ -248,22 +238,6 @@ const ConfigPanel = ({
           <>
             <div className='bi-config-row'>
               <label>X-axis</label>
-              {/* <Select
-                mode="tags"
-                allowClear
-                placeholder="Select X-axis field(s)"
-                value={config.dimensions && Array.isArray(config.dimensions) && config.dimensions.length
-                  ? config.dimensions
-                  : (config.dimension ? [config.dimension] : [])}
-                onChange={(vals) => {
-                  const arr = Array.isArray(vals) ? vals : [];
-                  onUpdate?.({
-                    dimensions: arr,
-                    dimension: arr[0] || '',
-                  });
-                }}
-                style={{ width: '100%' }}
-              > */}
               <Select
                 allowClear
                 placeholder='Select X-axis field'

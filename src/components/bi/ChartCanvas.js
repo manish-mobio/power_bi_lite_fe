@@ -73,6 +73,7 @@ const DEFAULT_CANVAS_MIN = { width: 2400, height: 1600 };
 const ChartItem = ({
   config,
   isSelected,
+  readOnly,
   onSelect,
   onRefresh,
   onRemove,
@@ -100,8 +101,9 @@ const ChartItem = ({
   }, [rect]);
 
   useEffect(() => {
-    onRectChangeRef.current?.(config.id, rect);
-  }, [rect, config.id]);
+    // Persist initial positions for charts (and avoid a render->effect->dispatch race on save).
+    onRectChangeRef.current?.(config.id, rectRef.current);
+  }, [config.id, onRectChange]);
 
   const getCanvasBounds = useCallback(
     () => ({
@@ -113,6 +115,7 @@ const ChartItem = ({
 
   const onDragMouseDown = useCallback(
     (e) => {
+      if (readOnly) return;
       if (e.target.dataset.handle) return;
       e.preventDefault();
       e.stopPropagation();
@@ -142,6 +145,8 @@ const ChartItem = ({
         );
         const next = { ...rectRef.current, x: newX, y: newY };
         rectRef.current = next;
+        // Emit immediately so "Save" after drag includes final geometry.
+        onRectChangeRef.current?.(config.id, next);
         setRect(next);
       };
       const onUp = () => {
@@ -151,11 +156,12 @@ const ChartItem = ({
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [config.id, onSelect, getCanvasBounds]
+    [config.id, onSelect, getCanvasBounds, readOnly]
   );
 
   const onResizeMouseDown = useCallback(
     (e, dir) => {
+      if (readOnly) return;
       e.preventDefault();
       e.stopPropagation();
       onSelect?.(config.id);
@@ -196,6 +202,8 @@ const ChartItem = ({
 
         const next = { x, y, w, h };
         rectRef.current = next;
+        // Emit immediately so "Save" after resize includes final geometry.
+        onRectChangeRef.current?.(config.id, next);
         setRect(next);
       };
 
@@ -206,7 +214,7 @@ const ChartItem = ({
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
     },
-    [config.id, onSelect, getCanvasBounds]
+    [config.id, onSelect, getCanvasBounds, readOnly]
   );
 
   return (
@@ -245,38 +253,42 @@ const ChartItem = ({
           isSelected={isSelected}
           onSelect={onSelect}
           onRefresh={onRefresh}
-          onRemove={onRemove}
-          onDuplicate={onDuplicate}
-          onUpdate={onUpdate}
+          onRemove={readOnly ? undefined : onRemove}
+          onDuplicate={readOnly ? undefined : onDuplicate}
+          onUpdate={readOnly ? undefined : onUpdate}
           globalFilter={globalFilter}
         />
       </div>
 
       {/* 8 resize handles — only visible when selected or on hover */}
-      {DIRECTIONS.map((dir) => (
-        <div
-          key={dir}
-          data-handle={dir}
-          onMouseDown={(e) => onResizeMouseDown(e, dir)}
-          style={{
-            ...getHandleStyle(dir),
-            opacity: isSelected ? 1 : 0,
-            transition: 'opacity 0.15s',
-            // Visual dot for corners, bar for edges
-            background:
-              dir.length === 2
-                ? '#0078d4' // corner = solid blue dot
-                : 'rgba(0,120,212,0.35)', // edge = translucent bar
-            borderRadius: dir.length === 2 ? '50%' : 3,
-          }}
-        />
-      ))}
+      {!readOnly
+        ? DIRECTIONS.map((dir) => (
+            <div
+              key={dir}
+              data-handle={dir}
+              onMouseDown={(e) => onResizeMouseDown(e, dir)}
+              style={{
+                ...getHandleStyle(dir),
+                opacity: isSelected ? 1 : 0,
+                transition: 'opacity 0.15s',
+                // Visual dot for corners, bar for edges
+                background:
+                  dir.length === 2
+                    ? '#0078d4' // corner = solid blue dot
+                    : 'rgba(0,120,212,0.35)', // edge = translucent bar
+                borderRadius: dir.length === 2 ? '50%' : 3,
+              }}
+            />
+          ))
+        : null}
 
-      <style>{`
-        [data-chart-id="${config.id}"]:hover > [data-handle] {
-          opacity: 0.6 !important;
-        }
-      `}</style>
+      {!readOnly ? (
+        <style>{`
+          [data-chart-id="${config.id}"]:hover > [data-handle] {
+            opacity: 0.6 !important;
+          }
+        `}</style>
+      ) : null}
     </div>
   );
 };
@@ -286,6 +298,7 @@ const ChartItem = ({
 const ChartCanvas = ({
   charts,
   selectedChartId,
+  readOnly,
   onSelect,
   onLayoutChange,
   savedLayouts,
@@ -514,6 +527,7 @@ const ChartCanvas = ({
               key={config.id}
               config={config}
               isSelected={selectedChartId === config.id}
+              readOnly={readOnly}
               onSelect={onSelect}
               onRefresh={onRefresh}
               onRemove={onRemove}
@@ -619,6 +633,7 @@ const ChartCanvas = ({
 ChartCanvas.propTypes = {
   charts: PropTypes.array,
   selectedChartId: PropTypes.string,
+  readOnly: PropTypes.bool,
   onSelect: PropTypes.func,
   onLayoutChange: PropTypes.func,
   savedLayouts: PropTypes.object,

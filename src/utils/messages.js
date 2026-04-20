@@ -98,6 +98,17 @@ export const BI_UI = {
   GENERATING_PDF: 'Generating PDF...',
   PDF_EXPORT_FAILED: 'PDF export failed',
   SHARED_OK: 'Dashboard shared successfully',
+  READ_ONLY_EDITING_DISABLED: 'Read-only access (Viewer): editing is disabled',
+  READ_ONLY_CANNOT_SAVE: 'Read-only access (Viewer): cannot save',
+  READ_ONLY_CANNOT_LOAD_CONFIGURATION:
+    'Read-only access (Viewer): cannot load another configuration',
+  READ_ONLY_CANNOT_SWITCH_DASHBOARD:
+    'Read-only access (Viewer): cannot switch dashboards',
+  PLAYGROUND_CLEARED: 'Playground cleared',
+  LOAD_OR_SAVE_DASHBOARD_FIRST: 'Load or save a dashboard first',
+  SYNCING_LATEST: 'Syncing latest…',
+  NO_CHARTS_IN_SYNCED_DASHBOARD: 'No charts in synced dashboard',
+  SYNC_FAILED: 'Sync failed',
 };
 
 export const FORMAT_UPLOAD_ERROR = (message) =>

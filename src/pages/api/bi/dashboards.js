@@ -38,13 +38,28 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
       const body = req.body || {};
-      const { name = 'My Dashboard', charts = [], layouts = {}, logo } = body;
+      const {
+        name = 'My Dashboard',
+        charts = [],
+        layouts = {},
+        logo,
+        collection: collectionField,
+        previousDashboardId,
+      } = body;
 
       const payload = {
         name,
         charts,
         layouts,
         ...(logo != null && typeof logo === 'string' ? { logo } : {}),
+        ...(collectionField != null && collectionField !== ''
+          ? { collection: String(collectionField) }
+          : {}),
+        ...(previousDashboardId &&
+        typeof previousDashboardId === 'string' &&
+        previousDashboardId.trim()
+          ? { previousDashboardId: previousDashboardId.trim() }
+          : {}),
         updatedAt: new Date().toISOString(),
       };
 

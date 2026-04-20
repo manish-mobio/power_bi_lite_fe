@@ -12,6 +12,10 @@ export function getDashboardById(id) {
   return nextApi.get(`/api/bi/dashboards/${id}`);
 }
 
+export function syncDashboard(dashboardId, payload = {}) {
+  return nextApi.post(`/api/bi/dashboards/${dashboardId}/sync`, payload);
+}
+
 export function uploadBiFile(payload) {
   return nextApi.post('/api/bi/upload', payload);
 }
