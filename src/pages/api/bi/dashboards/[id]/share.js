@@ -5,7 +5,7 @@ import { ApiVersion } from '@/utils/constants';
 import { getBackendBaseUrl } from '@/services/http/backendClient';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
+  if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return res
       .status(HTTP_STATUS.METHOD_NOT_ALLOWED)
       .json({ error: API_MSG.METHOD_NOT_ALLOWED });
@@ -19,8 +19,10 @@ export default async function handler(req, res) {
   }
   try {
     const url = `${getBackendBaseUrl}${ApiVersion}/dashboards/${id}/share`;
-
-    const upstream = await axios.post(url, req.body || {}, {
+    const upstream = await axios({
+      method: req.method,
+      url,
+      data: req.method === 'GET' ? undefined : req.body || {},
       headers: {
         'Content-Type': 'application/json',
         ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),

@@ -37,3 +37,11 @@ export function getBiCollections() {
 export function shareDashboard(dashboardId, payload) {
   return nextApi.post(`/api/bi/dashboards/${dashboardId}/share`, payload);
 }
+
+export function replaceDashboardShares(dashboardId, payload) {
+  return nextApi.put(`/api/bi/dashboards/${dashboardId}/share`, payload);
+}
+
+export function revokeDashboardShares(dashboardId) {
+  return nextApi.delete(`/api/bi/dashboards/${dashboardId}/share`);
+}

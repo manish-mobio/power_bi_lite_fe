@@ -126,6 +126,7 @@ export default function dashboardReducer(
           ...createDefaultChartConfig(),
           ...c,
         }));
+        next.selectedChartId = next.charts[0]?.id || null;
         if (
           next.charts.length &&
           (collection == null || !String(collection).trim())

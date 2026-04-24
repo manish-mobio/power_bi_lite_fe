@@ -25,6 +25,7 @@ import {
   AiOutlineClear,
 } from 'react-icons/ai';
 import { getBiCollections } from '@/services/biService';
+import DashboardAccessModal from './DashboardAccessModal';
 import styles from './DashboardToolbar.module.css';
 import {
   LOAD_LIST_OVERSCAN,
@@ -96,8 +97,27 @@ function filterNestedRows(rows, searchRaw) {
   return out;
 }
 
-function LoadDashboardNestedList({ items, recentIdsSet, onSelectRow }) {
+function formatSharedMeta(row, dateStr) {
+  const parts = [];
+  if (dateStr) parts.push(`Updated ${dateStr}`);
+  if (row?.isShared && !row?.isOwnedByMe) parts.push('Shared with you');
+  if (row?.canManageAccess && row?.shareCount > 0) {
+    parts.push(
+      `Shared with ${row.shareCount} user${row.shareCount === 1 ? '' : 's'}`
+    );
+  }
+  return parts.join(' • ');
+}
+
+function LoadDashboardNestedList({
+  items,
+  recentIdsSet,
+  onSelectRow,
+  onManageAccess,
+}) {
   const [scrollTop, setScrollTop] = useState(0);
+  const [menuRowKey, setMenuRowKey] = useState(null);
+  const menuRef = useRef(null);
   const totalHeight = items.length * LOAD_ROW_HEIGHT;
   const start = Math.max(
     0,
@@ -110,10 +130,26 @@ function LoadDashboardNestedList({ items, recentIdsSet, onSelectRow }) {
     ) + LOAD_LIST_OVERSCAN
   );
 
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setMenuRowKey(null);
+      }
+    };
+    if (menuRowKey) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () =>
+        document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [menuRowKey]);
+
   return (
     <div
       className={styles.loadModalListScroll}
-      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      onScroll={(e) => {
+        setScrollTop(e.currentTarget.scrollTop);
+        setMenuRowKey(null);
+      }}
     >
       {items.length === 0 ? null : (
         <div
@@ -132,10 +168,10 @@ function LoadDashboardNestedList({ items, recentIdsSet, onSelectRow }) {
             const dateStr = dateRaw
               ? new Date(dateRaw).toLocaleDateString()
               : null;
+            const metaText = formatSharedMeta(row, dateStr);
             return (
-              <button
+              <div
                 key={row.rowKey}
-                type='button'
                 className={`${styles.loadModalRow} ${isRecent ? styles.loadModalRowRecent : ''} ${isFolder ? styles.loadModalRowFolder : styles.loadModalRowVersion}`}
                 style={{
                   position: 'absolute',
@@ -145,28 +181,78 @@ function LoadDashboardNestedList({ items, recentIdsSet, onSelectRow }) {
                   height: LOAD_ROW_HEIGHT,
                   boxSizing: 'border-box',
                 }}
-                onClick={() => onSelectRow(row)}
               >
-                <span className={styles.loadModalRowMain}>
-                  <div
-                    className={
-                      isFolder
-                        ? styles.loadModalRowName
-                        : styles.loadModalRowVersionLabel
-                    }
-                  >
-                    {row.label}
-                  </div>
-                  {isFolder && dateStr ? (
-                    <div className={styles.loadModalRowMeta}>
-                      Updated {dateStr}
+                <button
+                  type='button'
+                  className={styles.loadModalRowButton}
+                  onClick={() => onSelectRow(row)}
+                >
+                  <span className={styles.loadModalRowMain}>
+                    <div
+                      className={
+                        isFolder
+                          ? styles.loadModalRowName
+                          : styles.loadModalRowVersionLabel
+                      }
+                    >
+                      {row.label}
                     </div>
+                    {isFolder && metaText ? (
+                      <div className={styles.loadModalRowMeta}>{metaText}</div>
+                    ) : null}
+                  </span>
+                  {isRecent ? (
+                    <span className={styles.loadModalRecentBadge}>Recent</span>
                   ) : null}
-                </span>
-                {isRecent ? (
-                  <span className={styles.loadModalRecentBadge}>Recent</span>
+                </button>
+                {isFolder && row.canManageAccess ? (
+                  <div className={styles.loadModalActionWrap} ref={menuRef}>
+                    <button
+                      type='button'
+                      className={styles.loadModalActionBtn}
+                      aria-label={`Manage sharing for ${row.label}`}
+                      aria-haspopup='menu'
+                      aria-expanded={menuRowKey === row.rowKey}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuRowKey((prev) =>
+                          prev === row.rowKey ? null : row.rowKey
+                        );
+                      }}
+                    >
+                      ⋯
+                    </button>
+                    {menuRowKey === row.rowKey ? (
+                      <div className={styles.loadModalActionMenu} role='menu'>
+                        <button
+                          type='button'
+                          className={styles.loadModalActionItem}
+                          role='menuitem'
+                          onClick={() => {
+                            setMenuRowKey(null);
+                            onManageAccess?.(row);
+                          }}
+                        >
+                          Manage access
+                        </button>
+                        <button
+                          type='button'
+                          className={`${styles.loadModalActionItem} ${styles.loadModalActionItemDanger}`}
+                          role='menuitem'
+                          onClick={() => {
+                            setMenuRowKey(null);
+                            onManageAccess?.(row, {
+                              startInRevokeConfirm: true,
+                            });
+                          }}
+                        >
+                          Stop sharing with all
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
-              </button>
+              </div>
             );
           })}
         </div>
@@ -179,6 +265,7 @@ LoadDashboardNestedList.propTypes = {
   items: PropTypes.array.isRequired,
   recentIdsSet: PropTypes.instanceOf(Set).isRequired,
   onSelectRow: PropTypes.func.isRequired,
+  onManageAccess: PropTypes.func,
 };
 
 const ToolbarButton = ({
@@ -289,6 +376,8 @@ const DashboardToolbar = ({
   onDashboardNameChange,
   recentDashboardIds = [],
   onLoadDashboardById,
+  onBeforeOpenLoadModal,
+  onRefreshDashboards,
   dataFilter,
   onDataFilterChange,
   dateFields = [],
@@ -297,17 +386,20 @@ const DashboardToolbar = ({
   loadModalNestedRows = [],
   onSyncShared,
   syncDisabled = true,
+  syncHasPendingChanges,
   onClearPlayground,
 }) => {
   const [collections, setCollections] = useState([]);
   const [loadingCollections, setLoadingCollections] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [loadModalOpen, setLoadModalOpen] = useState(false);
+  const [loadModalPreparing, setLoadModalPreparing] = useState(false);
   const [loadSearchQuery, setLoadSearchQuery] = useState('');
   const [debouncedLoadSearch, setDebouncedLoadSearch] = useState('');
   const [loadPortalReady, setLoadPortalReady] = useState(false);
   const loadSearchInputRef = useRef(null);
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
+  const [accessModalRow, setAccessModalRow] = useState(null);
   const dropdownRef = useRef(null);
   const filterDropdownRef = useRef(null);
 
@@ -438,6 +530,25 @@ const DashboardToolbar = ({
     },
     [onLoadDashboardById]
   );
+
+  const handleOpenLoadModal = useCallback(async () => {
+    if (loadModalPreparing) return;
+    setLoadModalPreparing(true);
+    try {
+      await onBeforeOpenLoadModal?.();
+      setLoadModalOpen(true);
+    } finally {
+      setLoadModalPreparing(false);
+    }
+  }, [loadModalPreparing, onBeforeOpenLoadModal]);
+
+  const handleManageAccess = useCallback((row, options = {}) => {
+    setAccessModalRow(row ? { ...row, ...options } : null);
+  }, []);
+
+  const handleAccessUpdated = useCallback(async () => {
+    await onRefreshDashboards?.();
+  }, [onRefreshDashboards]);
 
   // Fetch collections list on mount
   useEffect(() => {
@@ -835,12 +946,14 @@ const DashboardToolbar = ({
               <button
                 type='button'
                 className={styles.toolbarBtn}
-                onClick={() => setLoadModalOpen(true)}
-                disabled={readOnly}
+                onClick={handleOpenLoadModal}
+                disabled={readOnly || loadModalPreparing}
                 title={
                   readOnly
                     ? 'Read-only (Viewer): loading another dashboard is disabled'
-                    : 'Open saved dashboards'
+                    : loadModalPreparing
+                      ? 'Refreshing saved dashboards...'
+                      : 'Open saved dashboards'
                 }
                 aria-haspopup='dialog'
                 aria-expanded={loadModalOpen}
@@ -928,6 +1041,7 @@ const DashboardToolbar = ({
                           items={filteredNestedLoadRows}
                           recentIdsSet={recentIdsSet}
                           onSelectRow={handlePickLoadRow}
+                          onManageAccess={handleManageAccess}
                         />
                       ) : (
                         <div className={styles.loadModalListScroll}>
@@ -961,7 +1075,9 @@ const DashboardToolbar = ({
               title={
                 syncDisabled
                   ? 'Only the owner can merge collaborator edits into a new version'
-                  : 'Merge latest collaborator edits into a new version on your dashboard'
+                  : syncHasPendingChanges === false
+                    ? 'No pending collaborator changes were detected, but you can still run sync to refresh from the server'
+                    : 'Merge latest collaborator edits into a new version on your dashboard'
               }
             />
           </div>
@@ -1005,6 +1121,15 @@ const DashboardToolbar = ({
         )}
       </div>
 
+      <DashboardAccessModal
+        open={Boolean(accessModalRow)}
+        dashboardId={accessModalRow?.loadId || null}
+        dashboardName={accessModalRow?.label || ''}
+        startInRevokeConfirm={Boolean(accessModalRow?.startInRevokeConfirm)}
+        onClose={() => setAccessModalRow(null)}
+        onAccessUpdated={handleAccessUpdated}
+      />
+
       {/* shareUrl is used only to enable/disable the Share action */}
     </header>
   );
@@ -1033,6 +1158,8 @@ DashboardToolbar.propTypes = {
   onDashboardNameChange: PropTypes.func,
   recentDashboardIds: PropTypes.arrayOf(PropTypes.string),
   onLoadDashboardById: PropTypes.func,
+  onBeforeOpenLoadModal: PropTypes.func,
+  onRefreshDashboards: PropTypes.func,
   dataFilter: PropTypes.shape({
     field: PropTypes.string,
     type: PropTypes.oneOf(['date', 'month', 'quarter', 'year']),
@@ -1056,6 +1183,7 @@ DashboardToolbar.propTypes = {
   ),
   onSyncShared: PropTypes.func,
   syncDisabled: PropTypes.bool,
+  syncHasPendingChanges: PropTypes.bool,
 };
 
 export default DashboardToolbar;

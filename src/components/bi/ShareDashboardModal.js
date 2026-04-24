@@ -81,7 +81,7 @@ export default function ShareDashboardModal({
     if (selectedIdSet.has(idStr)) return;
     setSelected((prev) => [
       ...prev,
-      { userId: u.id, email: u.email, name: u.name, role: 'Viewer' },
+      { userId: u.id, email: u.email, name: u.name, role: 'Editor' },
     ]);
 
     // Remove from current dropdown result list. If this was the last visible suggestion,

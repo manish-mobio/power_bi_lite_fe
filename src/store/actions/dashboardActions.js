@@ -114,6 +114,19 @@ function buildLayoutsAndCharts(dashboard) {
     validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
   }
 
+  const savedRects = dashboard?.layouts?.rects;
+  if (
+    savedRects &&
+    typeof savedRects === 'object' &&
+    !Array.isArray(savedRects)
+  ) {
+    const rectsOut = {};
+    for (const id of chartIds) {
+      if (savedRects[id]) rectsOut[id] = savedRects[id];
+    }
+    if (Object.keys(rectsOut).length > 0) validLayouts.rects = rectsOut;
+  }
+
   const chartsWithIds = cfg.map((c, idx) => ({
     ...createDefaultChartConfig(),
     ...c,

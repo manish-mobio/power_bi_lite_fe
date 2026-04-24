@@ -17,7 +17,7 @@ export default async function handler(req, res) {
 
   try {
     const url = `${getBackendBaseUrl}${ApiVersion}/collections`;
-    console.log(`[BI Collections] Fetching collections from: ${url}`);
+
     const response = await axios.get(url, { validateStatus: () => true });
 
     if (!isHttpSuccessStatus(response.status)) {

@@ -1,8 +1,4 @@
-export const MOBIO = 'Power BI Lite';
-
-export const PAGE_TITLES = {
-  biDashboard: 'Power BI Lite',
-};
+export const APP_NAME = 'Power BI Lite';
 
 export const LOAD_ROW_HEIGHT = 56;
 export const LOAD_LIST_VIEWPORT = 300;
