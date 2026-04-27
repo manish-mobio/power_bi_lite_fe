@@ -5,10 +5,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { AiOutlineClose } from 'react-icons/ai';
-import { MaterialReactTable } from 'material-react-table';
+import { AgGridReact } from 'ag-grid-react';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import { VIEW_DATA_UI } from '@/utils/messages';
 import { postBiQuery } from '@/services/biService';
 import styles from './ViewDataModal.module.css';
+
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 const ViewDataModal = ({
   isOpen,
@@ -18,26 +21,52 @@ const ViewDataModal = ({
   recordCount,
   dataFilter,
 }) => {
-  const [data, setData] = useState([]);
+  const [pageData, setPageData] = useState([]);
+  const [serverRowCount, setServerRowCount] = useState(0);
+  const [globalData, setGlobalData] = useState([]);
+  const [globalDataReady, setGlobalDataReady] = useState(false);
+  const [globalDataLoading, setGlobalDataLoading] = useState(false);
+  const [pagination, setPagination] = useState({
+    pageIndex: 0,
+    pageSize: 50,
+  });
+  const [searchText, setSearchText] = useState('');
+  const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const isGlobalSearch = debouncedSearchText.trim().length > 0;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  }, [isOpen, collection, dataFilter]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearchText(searchText);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchText]);
 
   useEffect(() => {
     if (!isOpen || !collection || !fields?.length) {
-      setData([]);
+      setPageData([]);
+      setServerRowCount(0);
+      setGlobalData([]);
+      setGlobalDataReady(false);
       setError(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const limit =
-      typeof recordCount === 'number' && recordCount > 0 ? recordCount : 10000;
     postBiQuery({
       collection,
       type: 'table',
       selectedFields: fields.map((f) => f.name),
-      limit,
+      paginated: true,
+      pageIndex: pagination.pageIndex,
+      pageSize: pagination.pageSize,
       sortBy: 'dimension',
       sortOrder: 'asc',
       filter: dataFilter || undefined,
@@ -45,19 +74,30 @@ const ViewDataModal = ({
       .then((res) => res.data)
       .then((result) => {
         if (cancelled) return;
-        if (Array.isArray(result)) {
-          setData(result);
+        const rows = Array.isArray(result) ? result : result?.rows;
+        const total =
+          typeof result?.total === 'number'
+            ? result.total
+            : typeof recordCount === 'number'
+              ? recordCount
+              : 0;
+        if (Array.isArray(rows)) {
+          setPageData(rows);
+          setServerRowCount(total);
         } else if (result?.error) {
           setError(result.error);
-          setData([]);
+          setPageData([]);
+          setServerRowCount(0);
         } else {
-          setData([]);
+          setPageData([]);
+          setServerRowCount(0);
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setError(err.message || VIEW_DATA_UI.FAILED_TO_LOAD_DATA);
-          setData([]);
+          setPageData([]);
+          setServerRowCount(0);
         }
       })
       .finally(() => {
@@ -66,17 +106,181 @@ const ViewDataModal = ({
     return () => {
       cancelled = true;
     };
+  }, [
+    isOpen,
+    collection,
+    fields,
+    recordCount,
+    dataFilter,
+    pagination.pageIndex,
+    pagination.pageSize,
+  ]);
+
+  useEffect(() => {
+    if (!isOpen || !collection || !fields?.length) return;
+    let cancelled = false;
+    setGlobalDataLoading(true);
+    setGlobalDataReady(false);
+    postBiQuery({
+      collection,
+      type: 'table',
+      selectedFields: fields.map((f) => f.name),
+      paginated: false,
+      limit: Math.max(recordCount || 1000, 1000),
+      sortBy: 'dimension',
+      sortOrder: 'asc',
+      filter: dataFilter || undefined,
+    })
+      .then((res) => res.data)
+      .then((result) => {
+        if (cancelled) return;
+        const rows = Array.isArray(result) ? result : result?.rows;
+        if (Array.isArray(rows)) {
+          setGlobalData(rows);
+          setGlobalDataReady(true);
+        } else {
+          setGlobalData([]);
+          setGlobalDataReady(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGlobalData([]);
+          setGlobalDataReady(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setGlobalDataLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, collection, fields, recordCount, dataFilter]);
-  const columnKeys =
-    data.length > 0 ? Object.keys(data[0]) : (fields || []).map((f) => f.name);
-  const mrtColumns = useMemo(
+
+  const safePageData = useMemo(
+    () =>
+      Array.isArray(pageData)
+        ? pageData.filter(
+            (row) => row && typeof row === 'object' && !Array.isArray(row)
+          )
+        : [],
+    [pageData]
+  );
+  const safeGlobalData = useMemo(
+    () =>
+      Array.isArray(globalData)
+        ? globalData.filter(
+            (row) => row && typeof row === 'object' && !Array.isArray(row)
+          )
+        : [],
+    [globalData]
+  );
+  const normalizedSearch = debouncedSearchText.trim().toLowerCase();
+  const globalSearchIndex = useMemo(
+    () =>
+      safeGlobalData.map((row) =>
+        Object.values(row || {})
+          .map((value) => String(value ?? '').toLowerCase())
+          .join(' ')
+      ),
+    [safeGlobalData]
+  );
+  const filteredGlobalData = useMemo(() => {
+    if (!normalizedSearch) return safeGlobalData;
+    if (!globalDataReady) return [];
+    const rows = [];
+    for (let i = 0; i < safeGlobalData.length; i += 1) {
+      if (globalSearchIndex[i]?.includes(normalizedSearch)) {
+        rows.push(safeGlobalData[i]);
+      }
+    }
+    return rows;
+  }, [safeGlobalData, globalSearchIndex, normalizedSearch, globalDataReady]);
+  const activeData = isGlobalSearch ? filteredGlobalData : safePageData;
+  const columnKeys = useMemo(() => {
+    if (activeData.length > 0) {
+      return Object.keys(activeData[0] || {});
+    }
+    return (fields || [])
+      .map((f) => f?.name)
+      .filter((name) => typeof name === 'string' && name.trim() !== '');
+  }, [activeData, fields]);
+  const numericColumns = useMemo(() => {
+    const typedNumeric = new Set(
+      (fields || [])
+        .filter((f) => f?.type === 'number' && typeof f?.name === 'string')
+        .map((f) => f.name)
+    );
+    if (activeData.length === 0) return typedNumeric;
+    columnKeys.forEach((key) => {
+      const hasValue = activeData.some(
+        (row) => row?.[key] !== null && row?.[key] !== ''
+      );
+      if (!hasValue) return;
+      const isNumeric = activeData.every((row) => {
+        const value = row?.[key];
+        if (value === null || value === undefined || value === '') return true;
+        if (typeof value === 'number') return Number.isFinite(value);
+        if (typeof value === 'string') return Number.isFinite(Number(value));
+        return false;
+      });
+      if (isNumeric) typedNumeric.add(key);
+    });
+    return typedNumeric;
+  }, [fields, activeData, columnKeys]);
+  const agColumns = useMemo(
     () =>
       columnKeys.map((key) => ({
-        accessorKey: key,
-        header: key,
+        field: key,
+        headerName: key,
+        minWidth: 140,
+        flex: 1,
+        type: numericColumns.has(key) ? 'numericColumn' : undefined,
+        headerClass: numericColumns.has(key)
+          ? styles.numericHeader
+          : styles.textHeader,
+        cellClass: numericColumns.has(key)
+          ? styles.numericCell
+          : styles.textCell,
+        tooltipValueGetter: (params) => {
+          const value = params?.value;
+          if (value === null || value === undefined || value === '') return '—';
+          return String(value);
+        },
+        valueFormatter: numericColumns.has(key)
+          ? (params) => {
+              const value = params?.value;
+              if (value === null || value === undefined || value === '')
+                return '—';
+              const num = Number(value);
+              if (!Number.isFinite(num)) return String(value);
+              return num.toLocaleString();
+            }
+          : undefined,
       })),
-    [columnKeys]
+    [columnKeys, numericColumns]
   );
+  const defaultColDef = useMemo(
+    () => ({
+      sortable: true,
+      filter: true,
+      resizable: true,
+      floatingFilter: true,
+      minWidth: 130,
+      flex: 1,
+      suppressHeaderMenuButton: true,
+    }),
+    []
+  );
+  const totalPages = isGlobalSearch
+    ? 1
+    : Math.max(1, Math.ceil(serverRowCount / pagination.pageSize));
+  const currentPage = isGlobalSearch ? 1 : pagination.pageIndex + 1;
+  const canPrev = pagination.pageIndex > 0;
+  const canNext = currentPage < totalPages;
+  const activeRowCount = isGlobalSearch
+    ? filteredGlobalData.length
+    : serverRowCount;
 
   if (!isOpen) return null;
 
@@ -90,7 +294,17 @@ const ViewDataModal = ({
     >
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          <h2 id='view-data-title'>View Data — {collection || 'Collection'}</h2>
+          <div className={styles.headerTitleWrap}>
+            <h2 id='view-data-title'>
+              View Data — {collection || 'Collection'}
+            </h2>
+            <div className={styles.headerMeta}>
+              {/* <span className={styles.metaBadge}>Server-side paging</span> */}
+              <span className={styles.metaBadge}>
+                {columnKeys.length} columns
+              </span>
+            </div>
+          </div>
           <button
             type='button'
             className={styles.closeBtn}
@@ -101,59 +315,134 @@ const ViewDataModal = ({
           </button>
         </div>
         <div className={styles.body}>
-          {loading && <div className={styles.loading}>Loading data…</div>}
-          {error && <div className={styles.error}>{error}</div>}
-          {!loading && !error && data.length === 0 && (
-            <div className={styles.empty}>No rows to display.</div>
-          )}
-          {!loading && !error && data.length > 0 && (
-            <div className={styles.tableWrap}>
-              <MaterialReactTable
-                columns={mrtColumns}
-                data={data}
-                enableColumnFilters
-                enableSorting
-                enableGlobalFilter
-                enablePagination
-                initialState={{
-                  pagination: { pageIndex: 0, pageSize: 50 }, // 👈 default 50 rows
-                }}
-                enableStickyHeader
-                enableRowVirtualization
-                muiTableBodyProps={{ sx: { fontSize: 12 } }}
-                muiBottomToolbarProps={{
-                  sx: {
-                    flex: '0 0 auto',
-                    borderTop: '1px solid #e5e7eb',
-                  },
-                }}
-                muiTablePaperProps={{
-                  sx: {
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden',
-                    boxShadow: 'none',
-                    border: 'none',
-                  },
-                }}
-                muiTableContainerProps={{
-                  sx: {
-                    flex: '1 1 auto',
-                    minHeight: 0,
-                    overflow: 'auto',
-                  },
-                }}
-              />
+          {loading && !isGlobalSearch && (
+            <div className={`${styles.loading} ${styles.stateCard}`}>
+              <span className={styles.loaderDot} />
+              Loading data...
             </div>
           )}
+          {isGlobalSearch && globalDataLoading && (
+            <div className={`${styles.loading} ${styles.stateCard}`}>
+              <span className={styles.loaderDot} />
+              Preparing global search index...
+            </div>
+          )}
+          {error && (
+            <div className={`${styles.error} ${styles.stateCard}`}>{error}</div>
+          )}
+          {!loading &&
+            !globalDataLoading &&
+            !error &&
+            activeData.length === 0 && (
+              <div className={`${styles.empty} ${styles.stateCard}`}>
+                No rows to display.
+              </div>
+            )}
+          {!loading &&
+            !error &&
+            activeData.length > 0 &&
+            columnKeys.length > 0 && (
+              <div className={styles.tableWrap}>
+                <div className={styles.toolbar}>
+                  <input
+                    type='text'
+                    className={styles.searchInput}
+                    placeholder='Global search across all rows...'
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                  />
+                  <button
+                    type='button'
+                    className={styles.ghostBtn}
+                    onClick={() => setSearchText('')}
+                  >
+                    Clear Search
+                  </button>
+                  {/* <span className={styles.quickInfo}>
+                  Showing {safeData.length} rows on this page
+                </span> */}
+                </div>
+                <div
+                  className={`${styles.tableScroller} ag-theme-alpine ${styles.agGridTheme}`}
+                >
+                  <AgGridReact
+                    style={{ width: '100%', height: '100%' }}
+                    rowData={activeData}
+                    columnDefs={agColumns}
+                    defaultColDef={defaultColDef}
+                    domLayout='normal'
+                    enableBrowserTooltips
+                    tooltipShowDelay={200}
+                    getRowId={(params) =>
+                      String(
+                        params?.data?._id ??
+                          `${pagination.pageIndex}-${params.rowIndex}`
+                      )
+                    }
+                    suppressColumnVirtualisation={false}
+                    suppressRowVirtualisation={false}
+                    rowBuffer={10}
+                    enableCellTextSelection
+                    animateRows
+                  />
+                </div>
+              </div>
+            )}
         </div>
         <div className={styles.footer}>
           <span className={styles.recordInfo}>
             {!loading &&
-              data.length > 0 &&
-              `${data.length.toLocaleString()} rows`}
+              activeRowCount > 0 &&
+              `${activeRowCount.toLocaleString()} rows${isGlobalSearch ? ' (matching search)' : ''} • page ${currentPage}/${totalPages} • ${activeData.length.toLocaleString()} loaded`}
           </span>
+          <div className={styles.paginationControls}>
+            <span className={styles.pagePill}>
+              {currentPage}/{totalPages}
+            </span>
+            <button
+              type='button'
+              className={styles.secondaryBtn}
+              onClick={() =>
+                setPagination((prev) => ({
+                  ...prev,
+                  pageIndex: Math.max(0, prev.pageIndex - 1),
+                }))
+              }
+              disabled={!canPrev || loading || isGlobalSearch}
+            >
+              Prev
+            </button>
+            <button
+              type='button'
+              className={styles.secondaryBtn}
+              onClick={() =>
+                setPagination((prev) => ({
+                  ...prev,
+                  pageIndex: prev.pageIndex + 1,
+                }))
+              }
+              disabled={!canNext || loading || isGlobalSearch}
+            >
+              Next
+            </button>
+            <select
+              className={styles.pageSizeSelect}
+              value={pagination.pageSize}
+              onChange={(e) =>
+                setPagination({
+                  pageIndex: 0,
+                  pageSize: Number(e.target.value) || 50,
+                })
+              }
+              disabled={loading}
+            >
+              {[25, 50, 100, 250].map((size) => (
+                <option key={size} value={size}>
+                  {size}/page
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             type='button'
             className={styles.closeFooterBtn}

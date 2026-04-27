@@ -20,6 +20,8 @@
     "@mui/material": "^7.3.8",
     "@mui/x-date-pickers": "^8.27.2",
     "@reduxjs/toolkit": "^2.2.5",
+    "ag-grid-community": "^35.2.1",
+    "ag-grid-react": "^35.2.1",
     "antd": "^5.29.3",
     "axios": "^1.7.2",
     "axios-mock-adapter": "^1.22.0",

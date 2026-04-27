@@ -31,7 +31,31 @@ export default async function handler(req, res) {
     }
 
     let apiPath = `${getBackendBaseUrl}${ApiVersion}/collection/${config.collection}`;
-    let url = `${apiPath}?limit=${config.limit || 1000}`;
+    const isPaginatedTable = isTable && config.paginated;
+    const pageSize = Math.max(
+      1,
+      parseInt(config.pageSize, 10) || parseInt(config.limit, 10) || 50
+    );
+    const pageIndex = Math.max(0, parseInt(config.pageIndex, 10) || 0);
+    const skip = pageIndex * pageSize;
+    const urlParams = new URLSearchParams();
+    urlParams.set(
+      'limit',
+      String(isPaginatedTable ? pageSize : config.limit || 1000)
+    );
+    if (isPaginatedTable) {
+      urlParams.set('skip', String(skip));
+      urlParams.set('paginated', 'true');
+    }
+    if (config.filter?.field && config.filter?.type) {
+      urlParams.set('filterField', config.filter.field);
+      urlParams.set('filterType', config.filter.type);
+      if (config.filter.from) urlParams.set('filterFrom', config.filter.from);
+      if (config.filter.to) urlParams.set('filterTo', config.filter.to);
+      if (config.filter.value)
+        urlParams.set('filterValue', config.filter.value);
+    }
+    let url = `${apiPath}?${urlParams.toString()}`;
 
     let response = await axios.get(url, { validateStatus: () => true });
     if (
@@ -41,7 +65,7 @@ export default async function handler(req, res) {
       apiPath = config.collection
         ? `${getBackendBaseUrl}${ApiVersion}/${config.collection}`
         : `${getBackendBaseUrl}${ApiVersion}`;
-      url = `${apiPath}?limit=${config.limit || 1000}`;
+      url = `${apiPath}?${urlParams.toString()}`;
       response = await axios.get(url, { validateStatus: () => true });
     }
     if (!isHttpSuccessStatus(response.status)) {
@@ -49,27 +73,39 @@ export default async function handler(req, res) {
     }
 
     const data = response.data;
-    let items = Array.isArray(data) ? data : data?.data || data?.results || [];
+    const pagedRows = data?.rows;
+    const pagedTotal = typeof data?.total === 'number' ? data.total : null;
+    let items = Array.isArray(data)
+      ? data
+      : Array.isArray(pagedRows)
+        ? pagedRows
+        : data?.data || data?.results || [];
     if (!items.length && data && typeof data === 'object') {
       const key = Object.keys(data).find((k) => Array.isArray(data[k]));
       if (key) items = data[key];
     }
 
-    if (config.filter && config.filter.field) {
+    if (config.filter && config.filter.field && !isPaginatedTable) {
       items = applyDateFilter(items, config.filter);
     }
 
     if (isTable) {
-      const result = getTableData(
+      const rows = getTableData(
         items,
         config.selectedFields,
         config.sortBy,
         config.sortOrder,
         config.dimension,
         config.measure,
-        config.limit
+        isPaginatedTable ? pageSize : config.limit
       );
-      return res.status(HTTP_STATUS.OK).json(result);
+      if (isPaginatedTable) {
+        return res.status(HTTP_STATUS.OK).json({
+          rows,
+          total: pagedTotal ?? rows.length,
+        });
+      }
+      return res.status(HTTP_STATUS.OK).json(rows);
     }
 
     const pipeline = generatePipeline(config);
