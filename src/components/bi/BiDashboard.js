@@ -62,6 +62,7 @@ import {
   errorMessage,
   infoMessage,
   loadingMessage,
+  successMessage,
   updateMessage,
 } from '@/utils/commonFunctions';
 
@@ -862,8 +863,9 @@ const BiDashboard = () => {
   const performLogout = useCallback(async () => {
     try {
       await logoutRequest();
+      successMessage(BI_UI.LOGOUT_SUCCESS);
     } catch {
-      // ignore network failures and still navigate to login
+      infoMessage(BI_UI.LOGOUT_REDIRECT_LOGIN);
     } finally {
       if (typeof window !== 'undefined') {
         window.location.assign('/login');
@@ -1915,7 +1917,9 @@ const BiDashboard = () => {
               'FAST'
             );
             textLeft = margin + logoW + 4;
-          } catch (err) {}
+          } catch (err) {
+            console.warn('Failed to add logo to PDF header:', err);
+          }
         }
         pdfInstance.setFontSize(9);
         pdfInstance.setFont('helvetica', 'bold');

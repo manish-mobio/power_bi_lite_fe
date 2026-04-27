@@ -6,10 +6,14 @@ import {
   AiOutlinePicture,
   AiOutlineLock,
   AiOutlineDelete,
+  AiOutlineEye,
+  AiOutlineEyeInvisible,
 } from 'react-icons/ai';
 import { AUTH_UI } from '@/utils/messages';
 import { isHttpSuccessStatus } from '@/utils/statusCode';
 import { changePasswordRequest } from '@/services/authService';
+import { errorMessage, successMessage } from '@/utils/commonFunctions';
+import authForm from '@/styles/AuthForm.module.css';
 import styles from './ProfileBar.module.css';
 
 function ProfileBar({
@@ -27,6 +31,9 @@ function ProfileBar({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [pwdError, setPwdError] = useState('');
   const [pwdSubmitting, setPwdSubmitting] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const wrapRef = useRef(null);
 
   useEffect(() => {
@@ -47,6 +54,9 @@ function ProfileBar({
     setConfirmPassword('');
     setPwdError('');
     setPwdSubmitting(false);
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
   }, []);
 
   const submitChangePassword = async (e) => {
@@ -73,14 +83,19 @@ function ProfileBar({
           ? res.data
           : {};
       if (!isHttpSuccessStatus(res.status)) {
-        setPwdError(data?.error || AUTH_UI.PASSWORD_UPDATE_FAILED);
+        const msg = data?.error || AUTH_UI.PASSWORD_UPDATE_FAILED;
+        setPwdError(msg);
+        errorMessage(msg);
         setPwdSubmitting(false);
         return;
       }
+      successMessage(AUTH_UI.PASSWORD_UPDATE_SUCCESS);
       closePwdModal();
       setOpen(false);
     } catch (err) {
-      setPwdError(err.message || AUTH_UI.PASSWORD_UPDATE_FAILED);
+      const msg = err.message || AUTH_UI.PASSWORD_UPDATE_FAILED;
+      setPwdError(msg);
+      errorMessage(msg);
       setPwdSubmitting(false);
     }
   };
@@ -201,38 +216,89 @@ function ProfileBar({
             <h3 id='profile-change-pwd-title'>Change password</h3>
             <div className={styles.field}>
               <label htmlFor='profile-current-pwd'>Current password</label>
-              <input
-                id='profile-current-pwd'
-                type='password'
-                autoComplete='current-password'
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-              />
+              <div className={authForm.passwordWrap}>
+                <input
+                  id='profile-current-pwd'
+                  type={showCurrentPassword ? 'text' : 'password'}
+                  autoComplete='current-password'
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  className={authForm.passwordInput}
+                />
+                <button
+                  type='button'
+                  className={authForm.togglePwd}
+                  onClick={() => setShowCurrentPassword((v) => !v)}
+                  aria-label={
+                    showCurrentPassword ? 'Hide password' : 'Show password'
+                  }
+                >
+                  {showCurrentPassword ? (
+                    <AiOutlineEyeInvisible size={20} aria-hidden />
+                  ) : (
+                    <AiOutlineEye size={20} aria-hidden />
+                  )}
+                </button>
+              </div>
             </div>
             <div className={styles.field}>
               <label htmlFor='profile-new-pwd'>New password</label>
-              <input
-                id='profile-new-pwd'
-                type='password'
-                autoComplete='new-password'
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={8}
-              />
+              <div className={authForm.passwordWrap}>
+                <input
+                  id='profile-new-pwd'
+                  type={showNewPassword ? 'text' : 'password'}
+                  autoComplete='new-password'
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className={authForm.passwordInput}
+                />
+                <button
+                  type='button'
+                  className={authForm.togglePwd}
+                  onClick={() => setShowNewPassword((v) => !v)}
+                  aria-label={
+                    showNewPassword ? 'Hide password' : 'Show password'
+                  }
+                >
+                  {showNewPassword ? (
+                    <AiOutlineEyeInvisible size={20} aria-hidden />
+                  ) : (
+                    <AiOutlineEye size={20} aria-hidden />
+                  )}
+                </button>
+              </div>
             </div>
             <div className={styles.field}>
               <label htmlFor='profile-confirm-pwd'>Confirm new password</label>
-              <input
-                id='profile-confirm-pwd'
-                type='password'
-                autoComplete='new-password'
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={8}
-              />
+              <div className={authForm.passwordWrap}>
+                <input
+                  id='profile-confirm-pwd'
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  autoComplete='new-password'
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  className={authForm.passwordInput}
+                />
+                <button
+                  type='button'
+                  className={authForm.togglePwd}
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  aria-label={
+                    showConfirmPassword ? 'Hide password' : 'Show password'
+                  }
+                >
+                  {showConfirmPassword ? (
+                    <AiOutlineEyeInvisible size={20} aria-hidden />
+                  ) : (
+                    <AiOutlineEye size={20} aria-hidden />
+                  )}
+                </button>
+              </div>
             </div>
             {pwdError ? (
               <div className={styles.modalError}>{pwdError}</div>

@@ -23,6 +23,16 @@ export function changePasswordRequest({ currentPassword, newPassword }) {
   });
 }
 
+export function forgotPasswordRequest({ email }) {
+  return nextApi.post('/api/auth/forgot-password', { email });
+}
+
+export function resetPasswordRequest({ token, password }) {
+  return nextApi.post(`/api/auth/reset-password/${encodeURIComponent(token)}`, {
+    password,
+  });
+}
+
 export function searchUsersRequest(q) {
   return nextApi.get(`/api/auth/search-users?email=${encodeURIComponent(q)}`);
 }

@@ -4,50 +4,47 @@ import { useRouter } from 'next/router';
 import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
 import { AUTH_UI } from '@/utils/messages';
 import { isHttpSuccessStatus } from '@/utils/statusCode';
-import { loginRequest } from '@/services/authService';
-import {
-  errorMessage,
-  infoMessage,
-  successMessage,
-} from '@/utils/commonFunctions';
-import authForm from '../styles/AuthForm.module.css';
+import { resetPasswordRequest } from '@/services/authService';
+import { errorMessage, successMessage } from '@/utils/commonFunctions';
+import authForm from '../../styles/AuthForm.module.css';
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  React.useEffect(() => {
-    if (router.query?.signup === 'success') {
-      infoMessage(AUTH_UI.SIGNUP_SUCCESS_LOGIN_REQUIRED);
-    }
-  }, [router.query?.signup]);
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      errorMessage(AUTH_UI.PASSWORDS_NO_MATCH);
+      return;
+    }
+
+    const token = String(router.query?.token || '').trim();
+    if (!token) {
+      errorMessage(AUTH_UI.INVALID_RESET_TOKEN);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const res = await loginRequest({ email, password });
-      const data =
-        res.data && typeof res.data === 'object' && !Array.isArray(res.data)
-          ? res.data
-          : {};
+      const res = await resetPasswordRequest({ token, password });
+      const data = res.data && typeof res.data === 'object' ? res.data : {};
       if (!isHttpSuccessStatus(res.status)) {
-        errorMessage(data?.error || AUTH_UI.LOGIN_FAILED);
+        errorMessage(data?.error || AUTH_UI.RESET_PASSWORD_FAILED);
         setIsSubmitting(false);
         return;
       }
-      successMessage(AUTH_UI.LOGIN_SUCCESS);
-      const redirect = router.query?.redirect;
-      const target =
-        typeof redirect === 'string' && redirect.trim()
-          ? redirect
-          : '/bi-dashboard';
-      await router.replace(target);
+      successMessage(data?.message || AUTH_UI.PASSWORD_RESET_SUCCESS);
+      setIsSubmitting(false);
+      setTimeout(() => {
+        router.replace('/login');
+      }, 1200);
     } catch (err) {
-      errorMessage(err.message || AUTH_UI.LOGIN_FAILED);
+      errorMessage(err.message || AUTH_UI.RESET_PASSWORD_FAILED);
       setIsSubmitting(false);
     }
   };
@@ -73,37 +70,21 @@ export default function LoginPage() {
         }}
       >
         <h2 style={{ margin: 0, marginBottom: 12, textAlign: 'center' }}>
-          Log in
+          Reset password
         </h2>
         <label style={{ display: 'block', fontSize: 12, color: '#475569' }}>
-          Email
-        </label>
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          type='email'
-          required
-          disabled={isSubmitting}
-          style={{
-            width: '100%',
-            padding: 10,
-            borderRadius: 8,
-            border: '1px solid #e5e7eb',
-            marginBottom: 10,
-          }}
-        />
-        <label style={{ display: 'block', fontSize: 12, color: '#475569' }}>
-          Password
+          New password
         </label>
         <div className={authForm.passwordWrap}>
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type={showPassword ? 'text' : 'password'}
+            minLength={8}
             required
             disabled={isSubmitting}
-            autoComplete='current-password'
             className={authForm.passwordInput}
+            style={{ marginBottom: 10 }}
           />
           <button
             type='button'
@@ -120,6 +101,34 @@ export default function LoginPage() {
             )}
           </button>
         </div>
+        <label style={{ display: 'block', fontSize: 12, color: '#475569' }}>
+          Confirm password
+        </label>
+        <div className={authForm.passwordWrap}>
+          <input
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            type={showConfirmPassword ? 'text' : 'password'}
+            minLength={8}
+            required
+            disabled={isSubmitting}
+            className={authForm.passwordInput}
+          />
+          <button
+            type='button'
+            className={authForm.togglePwd}
+            onClick={() => setShowConfirmPassword((v) => !v)}
+            disabled={isSubmitting}
+            aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+            tabIndex={0}
+          >
+            {showConfirmPassword ? (
+              <AiOutlineEyeInvisible size={20} aria-hidden />
+            ) : (
+              <AiOutlineEye size={20} aria-hidden />
+            )}
+          </button>
+        </div>
         <button
           type='submit'
           className={authForm.submitBtn}
@@ -129,17 +138,14 @@ export default function LoginPage() {
           {isSubmitting ? (
             <>
               <span className={authForm.btnSpinner} aria-hidden />
-              Signing you in…
+              Resetting password...
             </>
           ) : (
-            'Log in'
+            'Reset password'
           )}
         </button>
-        <div style={{ marginTop: 8, fontSize: 12 }}>
-          <Link href='/forgot-password'>Forgot password?</Link>
-        </div>
         <div style={{ marginTop: 12, fontSize: 12, color: '#475569' }}>
-          New here? <Link href='/signup'>Create an account</Link>
+          Back to <Link href='/login'>Log in</Link>
         </div>
       </form>
     </div>

@@ -29,11 +29,19 @@ export const FORMAT_BACKEND_ERROR_STATUS = (status) =>
 
 export const AUTH_UI = {
   LOGIN_FAILED: 'Login failed',
+  LOGIN_SUCCESS: 'Login successful',
   SIGNUP_FAILED: 'Signup failed',
+  SIGNUP_SUCCESS_LOGIN_REQUIRED: 'Account created successfully. Please log in.',
+  FORGOT_PASSWORD_FAILED: 'Failed to send reset link',
+  RESET_PASSWORD_FAILED: 'Failed to reset password',
+  RESET_LINK_SENT: 'Reset link sent to your email',
+  INVALID_RESET_TOKEN: 'Invalid reset token',
+  PASSWORD_RESET_SUCCESS: 'Password reset successful. Redirecting to login...',
   PASSWORD_DIFFERENT: 'Current and new passwords must be different.',
   PASSWORD_MIN_LENGTH: 'New password must be at least 8 characters.',
   PASSWORDS_NO_MATCH: 'New passwords do not match.',
   PASSWORD_UPDATE_FAILED: 'Could not update password',
+  PASSWORD_UPDATE_SUCCESS: 'Password updated successfully',
 };
 
 export const SHARE_UI = {
@@ -98,6 +106,8 @@ export const BI_UI = {
   GENERATING_PDF: 'Generating PDF...',
   PDF_EXPORT_FAILED: 'PDF export failed',
   SHARED_OK: 'Dashboard shared successfully',
+  LOGOUT_SUCCESS: 'Logged out successfully',
+  LOGOUT_REDIRECT_LOGIN: 'Session ended. Redirecting to login.',
   READ_ONLY_EDITING_DISABLED: 'Read-only access (Viewer): editing is disabled',
   READ_ONLY_CANNOT_SAVE: 'Read-only access (Viewer): cannot save',
   READ_ONLY_CANNOT_LOAD_CONFIGURATION:
