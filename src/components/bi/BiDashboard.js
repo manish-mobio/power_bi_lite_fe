@@ -64,6 +64,7 @@ import {
   infoMessage,
   loadingMessage,
   successMessage,
+  supportedMimes,
   updateMessage,
 } from '@/utils/commonFunctions';
 import defaultDashboardLogo from '../../assets/Dashboard.png';
@@ -576,50 +577,101 @@ const BiDashboard = () => {
       const file = event.target.files?.[0];
       if (!file) return;
 
-      const fileName = file.name.toLowerCase();
+      const fileName = String(file.name || '').toLowerCase();
       const isJSON = fileName.endsWith('.json');
       const isCSV = fileName.endsWith('.csv');
+      const isXLSX = fileName.endsWith('.xlsx');
 
-      if (!isJSON && !isCSV) {
-        infoMessage(BI_UI.INVALID_FILE_FORMAT);
+      const maxFileSizeBytes = 10 * 1024 * 1024;
 
-        setTimeout(() => setSaveStatus(''), 3000);
+      if (!isJSON && !isCSV && !isXLSX) {
+        errorMessage(
+          `${BI_UI.UNSUPPORTED_FILE_TYPE}. ${BI_UI.FILE_UPLOAD_FORMATS_HINT}`
+        );
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      if (file.type && !supportedMimes.has(String(file.type).toLowerCase())) {
+        errorMessage(BI_UI.INVALID_FILE_FORMAT);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      if (file.size <= 0) {
+        errorMessage(BI_UI.FILE_EMPTY);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+      if (file.size > maxFileSizeBytes) {
+        errorMessage(`${BI_UI.FILE_TOO_LARGE}. Max 10MB`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
       setSaveStatus(BI_UI.UPLOADING_FILE);
 
       try {
-        const text = await file.text();
+        let fileContent = '';
+        let normalizedType = '';
+
+        if (isXLSX) {
+          const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error(BI_UI.FILE_PARSE_ERROR));
+            reader.readAsDataURL(file);
+          });
+          const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : '';
+          if (!base64) {
+            throw new Error(BI_UI.FILE_PARSE_ERROR);
+          }
+          fileContent = base64;
+          normalizedType = 'xlsx';
+        } else {
+          fileContent = await file.text();
+          normalizedType = isJSON ? 'json' : 'csv';
+        }
 
         // Check if it's a dashboard config file (has charts array)
-        try {
-          const parsedData = JSON.parse(text);
-          if (parsedData?.charts && Array.isArray(parsedData.charts)) {
-            // It's a dashboard config file, load it directly
-            const loadedCharts = parsedData.charts;
-            const loadedLayouts = parsedData.layouts || {};
+        if (isJSON) {
+          try {
+            const parsedData = JSON.parse(fileContent);
+            if (parsedData?.charts && Array.isArray(parsedData.charts)) {
+              // It's a dashboard config file, load it directly
+              const loadedCharts = parsedData.charts;
+              const loadedLayouts = parsedData.layouts || {};
 
-            // Generate proper layouts if not provided or invalid
-            const chartIds = loadedCharts.map(
-              (c) =>
-                c.id ||
-                `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-            );
-            const validLayouts = {};
+              // Generate proper layouts if not provided or invalid
+              const chartIds = loadedCharts.map(
+                (c) =>
+                  c.id ||
+                  `chart-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+              );
+              const validLayouts = {};
 
-            if (loadedLayouts?.lg && Array.isArray(loadedLayouts.lg)) {
-              const savedLg = loadedLayouts.lg;
-              const hasValidSaved =
-                savedLg.length === chartIds.length &&
-                chartIds.every((id) => savedLg.some((item) => item.i === id));
+              if (loadedLayouts?.lg && Array.isArray(loadedLayouts.lg)) {
+                const savedLg = loadedLayouts.lg;
+                const hasValidSaved =
+                  savedLg.length === chartIds.length &&
+                  chartIds.every((id) => savedLg.some((item) => item.i === id));
 
-              if (hasValidSaved) {
-                validLayouts.lg = savedLg;
-                validLayouts.md =
-                  loadedLayouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
-                validLayouts.sm =
-                  loadedLayouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
+                if (hasValidSaved) {
+                  validLayouts.lg = savedLg;
+                  validLayouts.md =
+                    loadedLayouts.md || savedLg.map((l) => ({ ...l, w: 5 }));
+                  validLayouts.sm =
+                    loadedLayouts.sm || savedLg.map((l) => ({ ...l, w: 6 }));
+                } else {
+                  const items = chartIds.map((id, idx) => ({
+                    i: id,
+                    x: (idx % 2) * 6,
+                    y: Math.floor(idx / 2) * 2,
+                    w: 6,
+                    h: 2,
+                  }));
+                  validLayouts.lg = items;
+                  validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
+                  validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
+                }
               } else {
                 const items = chartIds.map((id, idx) => ({
                   i: id,
@@ -632,68 +684,59 @@ const BiDashboard = () => {
                 validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
                 validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
               }
-            } else {
-              const items = chartIds.map((id, idx) => ({
-                i: id,
-                x: (idx % 2) * 6,
-                y: Math.floor(idx / 2) * 2,
-                w: 6,
-                h: 2,
-              }));
-              validLayouts.lg = items;
-              validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
-              validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
-            }
 
-            // Preserve pixel rects if present (ChartCanvas uses layouts.rects).
-            const savedRects = loadedLayouts?.rects;
-            if (
-              savedRects &&
-              typeof savedRects === 'object' &&
-              !Array.isArray(savedRects)
-            ) {
-              const rectsOut = {};
-              for (const id of chartIds) {
-                if (savedRects[id]) rectsOut[id] = savedRects[id];
+              // Preserve pixel rects if present (ChartCanvas uses layouts.rects).
+              const savedRects = loadedLayouts?.rects;
+              if (
+                savedRects &&
+                typeof savedRects === 'object' &&
+                !Array.isArray(savedRects)
+              ) {
+                const rectsOut = {};
+                for (const id of chartIds) {
+                  if (savedRects[id]) rectsOut[id] = savedRects[id];
+                }
+                if (Object.keys(rectsOut).length > 0)
+                  validLayouts.rects = rectsOut;
               }
-              if (Object.keys(rectsOut).length > 0)
-                validLayouts.rects = rectsOut;
-            }
 
-            const chartsWithIds = loadedCharts.map((c, idx) => ({
-              ...c,
-              id: c.id || chartIds[idx],
-            }));
+              const chartsWithIds = loadedCharts.map((c, idx) => ({
+                ...c,
+                id: c.id || chartIds[idx],
+              }));
 
-            dispatch(
-              loadDashboard({ charts: chartsWithIds, layouts: validLayouts })
-            );
-            if (
-              parsedData.logo != null &&
-              typeof parsedData.logo === 'string'
-            ) {
-              setDashboardLogo(parsedData.logo);
-            } else {
-              setDashboardLogo(null);
-            }
-            if (parsedData.name) setDashboardName(parsedData.name);
-            setSaveStatus(BI_UI.DASHBOARD_LOADED_OK);
-            setTimeout(() => setSaveStatus(''), 2000);
+              dispatch(
+                loadDashboard({ charts: chartsWithIds, layouts: validLayouts })
+              );
+              if (
+                parsedData.logo != null &&
+                typeof parsedData.logo === 'string'
+              ) {
+                setDashboardLogo(parsedData.logo);
+              } else {
+                setDashboardLogo(null);
+              }
+              if (parsedData.name) setDashboardName(parsedData.name);
+              setSaveStatus(BI_UI.DASHBOARD_LOADED_OK);
+              setTimeout(() => setSaveStatus(''), 2000);
 
-            if (fileInputRef.current) {
-              fileInputRef.current.value = '';
+              if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+              }
+              return;
             }
-            return;
+          } catch {
+            // Not a dashboard config, continue with data upload
           }
-        } catch {
-          // Not a dashboard config, continue with data upload
         }
 
         // Upload data file to backend for parsing and storage
         const response = await uploadBiFile({
           fileName: file.name,
-          fileContent: text,
-          fileType: isJSON ? 'json' : 'csv',
+          fileContent,
+          fileType: normalizedType,
+          mimeType: file.type || '',
+          fileSize: file.size || 0,
         });
 
         if (!isHttpSuccessStatus(response.status)) {
@@ -752,7 +795,11 @@ const BiDashboard = () => {
           setTimeout(() => setSaveStatus(''), 3000);
         }
       } catch (error) {
-        setSaveStatus(FORMAT_UPLOAD_ERROR(error.message));
+        const friendlyMessage =
+          error?.response?.data?.error ||
+          error?.message ||
+          BI_UI.FILE_PARSE_ERROR;
+        setSaveStatus(FORMAT_UPLOAD_ERROR(friendlyMessage));
         setTimeout(() => setSaveStatus(''), 3000);
       } finally {
         // Reset file input
@@ -1973,7 +2020,7 @@ const BiDashboard = () => {
             );
             textLeft = margin + logoW + 4;
           } catch (err) {
-            console.warn('Failed to add logo to PDF header:', err);
+            console.error('Error adding dashboard logo to PDF:', err);
           }
         }
         pdfInstance.setFontSize(9);
@@ -2601,7 +2648,7 @@ const BiDashboard = () => {
       <input
         ref={fileInputRef}
         type='file'
-        accept='.json,.csv'
+        accept='.json,.csv,.xlsx'
         style={{
           position: 'absolute',
           width: 0,

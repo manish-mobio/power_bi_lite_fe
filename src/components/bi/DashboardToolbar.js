@@ -738,7 +738,7 @@ const DashboardToolbar = ({
             title={
               readOnly
                 ? 'Read-only (Viewer): upload disabled'
-                : 'Upload JSON or CSV data'
+                : 'Upload CSV, JSON, or XLSX data'
             }
           />
         </div>

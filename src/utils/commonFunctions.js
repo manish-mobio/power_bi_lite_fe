@@ -30,3 +30,13 @@ export const loadingMessage = (text, key = 'global') => {
 export const updateMessage = ({ type, text, key = 'global', duration = 2 }) => {
   return message.open({ type, content: text, key, duration });
 };
+
+export const supportedMimes = new Set([
+  'application/json',
+  'text/json',
+  'text/csv',
+  'application/csv',
+  'text/plain',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/octet-stream',
+]);
