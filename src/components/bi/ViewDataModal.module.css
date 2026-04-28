@@ -218,6 +218,11 @@
   background: #f1f5f9;
 }
 
+.ghostBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .tableScroller {
   flex: 1 1 auto;
   min-height: 0;

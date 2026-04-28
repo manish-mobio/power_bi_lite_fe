@@ -11,6 +11,7 @@ export const LOAD_LIST_OVERSCAN = 6;
 export const MIN_W = 220;
 export const MIN_H = 160;
 export const HANDLE_SIZE = 2;
+export const PAGE_SIZE = 50;
 
 export const DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 

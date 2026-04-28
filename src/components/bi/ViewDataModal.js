@@ -10,6 +10,7 @@ import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import { VIEW_DATA_UI } from '@/utils/messages';
 import { postBiQuery } from '@/services/biService';
 import styles from './ViewDataModal.module.css';
+import { PAGE_SIZE } from '@/utils/constants';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -28,7 +29,7 @@ const ViewDataModal = ({
   const [globalDataLoading, setGlobalDataLoading] = useState(false);
   const [pagination, setPagination] = useState({
     pageIndex: 0,
-    pageSize: 50,
+    pageSize: PAGE_SIZE,
   });
   const [searchText, setSearchText] = useState('');
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
@@ -40,6 +41,17 @@ const ViewDataModal = ({
     if (!isOpen) return;
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   }, [isOpen, collection, dataFilter]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchText('');
+      setDebouncedSearchText('');
+      return;
+    }
+    // Opening the modal should never restore a stale global-search state.
+    setSearchText('');
+    setDebouncedSearchText('');
+  }, [isOpen, collection]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -284,6 +296,8 @@ const ViewDataModal = ({
 
   if (!isOpen) return null;
 
+  const canRenderGrid = !error && columnKeys.length > 0 && fields?.length;
+
   return (
     <div
       className={styles.overlay}
@@ -330,64 +344,60 @@ const ViewDataModal = ({
           {error && (
             <div className={`${styles.error} ${styles.stateCard}`}>{error}</div>
           )}
-          {!loading &&
-            !globalDataLoading &&
-            !error &&
-            activeData.length === 0 && (
-              <div className={`${styles.empty} ${styles.stateCard}`}>
-                No rows to display.
-              </div>
-            )}
-          {!loading &&
-            !error &&
-            activeData.length > 0 &&
-            columnKeys.length > 0 && (
-              <div className={styles.tableWrap}>
-                <div className={styles.toolbar}>
-                  <input
-                    type='text'
-                    className={styles.searchInput}
-                    placeholder='Global search across all rows...'
-                    value={searchText}
-                    onChange={(e) => setSearchText(e.target.value)}
-                  />
-                  <button
-                    type='button'
-                    className={styles.ghostBtn}
-                    onClick={() => setSearchText('')}
-                  >
-                    Clear Search
-                  </button>
-                  {/* <span className={styles.quickInfo}>
-                  Showing {safeData.length} rows on this page
-                </span> */}
-                </div>
-                <div
-                  className={`${styles.tableScroller} ag-theme-alpine ${styles.agGridTheme}`}
+          {canRenderGrid && (
+            <div className={styles.tableWrap}>
+              <div className={styles.toolbar}>
+                <input
+                  type='text'
+                  className={styles.searchInput}
+                  placeholder='Global search across all rows...'
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                />
+                <button
+                  type='button'
+                  className={styles.ghostBtn}
+                  onClick={() => setSearchText('')}
+                  disabled={!searchText}
                 >
-                  <AgGridReact
-                    style={{ width: '100%', height: '100%' }}
-                    rowData={activeData}
-                    columnDefs={agColumns}
-                    defaultColDef={defaultColDef}
-                    domLayout='normal'
-                    enableBrowserTooltips
-                    tooltipShowDelay={200}
-                    getRowId={(params) =>
-                      String(
-                        params?.data?._id ??
-                          `${pagination.pageIndex}-${params.rowIndex}`
-                      )
-                    }
-                    suppressColumnVirtualisation={false}
-                    suppressRowVirtualisation={false}
-                    rowBuffer={10}
-                    enableCellTextSelection
-                    animateRows
-                  />
-                </div>
+                  Clear Search
+                </button>
               </div>
-            )}
+
+              {!loading && !globalDataLoading && activeData.length === 0 && (
+                <div className={`${styles.empty} ${styles.stateCard}`}>
+                  {isGlobalSearch
+                    ? 'No rows match your search. Clear search to see data.'
+                    : 'No rows to display.'}
+                </div>
+              )}
+
+              <div
+                className={`${styles.tableScroller} ag-theme-alpine ${styles.agGridTheme}`}
+              >
+                <AgGridReact
+                  style={{ width: '100%', height: '100%' }}
+                  rowData={activeData}
+                  columnDefs={agColumns}
+                  defaultColDef={defaultColDef}
+                  domLayout='normal'
+                  enableBrowserTooltips
+                  tooltipShowDelay={200}
+                  getRowId={(params) =>
+                    String(
+                      params?.data?._id ??
+                        `${pagination.pageIndex}-${params.rowIndex}`
+                    )
+                  }
+                  suppressColumnVirtualisation={false}
+                  suppressRowVirtualisation={false}
+                  rowBuffer={10}
+                  enableCellTextSelection
+                  animateRows
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div className={styles.footer}>
           <span className={styles.recordInfo}>
@@ -431,7 +441,7 @@ const ViewDataModal = ({
               onChange={(e) =>
                 setPagination({
                   pageIndex: 0,
-                  pageSize: Number(e.target.value) || 50,
+                  pageSize: Number(e.target.value) || pagination.pageSize,
                 })
               }
               disabled={loading}
