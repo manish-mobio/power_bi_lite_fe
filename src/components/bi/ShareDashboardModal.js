@@ -81,7 +81,7 @@ export default function ShareDashboardModal({
     if (selectedIdSet.has(idStr)) return;
     setSelected((prev) => [
       ...prev,
-      { userId: u.id, email: u.email, name: u.name, role: 'Viewer' },
+      { userId: u.id, email: u.email, name: u.name, role: 'Editor' },
     ]);
 
     // Remove from current dropdown result list. If this was the last visible suggestion,
@@ -118,7 +118,7 @@ export default function ShareDashboardModal({
     if (!dashboardId) return;
     setSubmitError('');
     setSubmitting(true);
-    loadingMessage('Sharing dashboard…', 'share-dashboard');
+    loadingMessage(SHARE_UI.SHARING_DASHBOARD, 'share-dashboard');
     try {
       const payload = {
         shares: selected.map((s) => ({
@@ -140,7 +140,7 @@ export default function ShareDashboardModal({
 
       updateMessage({
         type: 'success',
-        text: 'Dashboard shared',
+        text: SHARE_UI.DASHBOARD_SHARED,
         key: 'share-dashboard',
         duration: 2,
       });

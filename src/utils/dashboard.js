@@ -101,6 +101,20 @@ export function buildLayoutsAndChartsFromSaved(dashboard) {
     validLayouts.md = items.map((l) => ({ ...l, w: 5 }));
     validLayouts.sm = items.map((l) => ({ ...l, w: 6 }));
   }
+
+  const savedRects = dashboard?.layouts?.rects;
+  if (
+    savedRects &&
+    typeof savedRects === 'object' &&
+    !Array.isArray(savedRects)
+  ) {
+    const rectsOut = {};
+    for (const id of chartIds) {
+      if (savedRects[id]) rectsOut[id] = savedRects[id];
+    }
+    if (Object.keys(rectsOut).length > 0) validLayouts.rects = rectsOut;
+  }
+
   const chartsWithIds = cfg.map((c, idx) => ({
     ...c,
     id: c.id || chartIds[idx],
@@ -121,4 +135,14 @@ export function cleanPdfHeaderLabel(str) {
       .replace(/\s+[^\w\s]+$/g, '')
       .trim() || str.trim()
   );
+}
+
+export function normalizeSharedUser(entry, idx) {
+  const userId = entry?.userId ?? entry?.id ?? `shared-${idx}`;
+  return {
+    userId: String(userId),
+    email: String(entry?.email || entry?.userEmail || '').trim(),
+    name: String(entry?.name || entry?.userName || '').trim(),
+    role: String(entry?.role || 'Viewer'),
+  };
 }

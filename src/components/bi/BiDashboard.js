@@ -57,6 +57,7 @@ import {
   STORAGE_KEY,
   RECENT_DASHBOARDS_STORAGE_KEY,
   LAST_SAVED_HASH_KEY,
+  APP_NAME,
 } from '@/utils/constants';
 import {
   errorMessage,
@@ -64,6 +65,7 @@ import {
   loadingMessage,
   updateMessage,
 } from '@/utils/commonFunctions';
+import defaultDashboardLogo from '../../assets/Dashboard.png';
 
 function stableStringify(value) {
   const seen = new WeakSet();
@@ -160,13 +162,20 @@ function groupDashboardsForToolbar(list, currentUserId) {
       });
       const latest = sorted[0];
       const displayName = latest.baseName || deriveBaseName(latest);
+      const sharedWith = Array.isArray(latest.sharedWith)
+        ? latest.sharedWith
+        : [];
+      const ownerUserId = String(latest.userId);
       out.push({
         lineageKey: lk,
         displayName: isShared ? `${displayName} (shared)` : displayName,
         latestId: String(latest._id || latest.id),
         latestUpdatedAt: latest.updatedAt,
-        ownerUserId: String(latest.userId),
+        ownerUserId,
         isShared,
+        isOwnedByMe: ownerUserId === me,
+        canManageAccess: ownerUserId === me && sharedWith.length > 0,
+        shareCount: sharedWith.length,
       });
     }
     return out;
@@ -224,6 +233,9 @@ function buildLoadModalNestedRows(groups, savedDashboards) {
       lineageKey: g.lineageKey,
       latestUpdatedAt: g.latestUpdatedAt,
       isShared: g.isShared,
+      isOwnedByMe: g.isOwnedByMe,
+      canManageAccess: g.canManageAccess,
+      shareCount: g.shareCount,
     });
     const latestIdStr = String(g.latestId);
     for (const v of versions) {
@@ -273,11 +285,12 @@ const BiDashboard = () => {
   const [dashboardOwnerId, setDashboardOwnerId] = useState(null);
   const [savedDashboards, setSavedDashboards] = useState([]);
   const [recentDashboardIds, setRecentDashboardIds] = useState([]);
-  const [dashboardLogo, setDashboardLogo] = useState(null); // base64 data URL for dashboard logo
+  const [dashboardLogo, setDashboardLogo] = useState(defaultDashboardLogo); // base64 data URL for dashboard logo
   const [dataFilter, setDataFilter] = useState(null); // { field, type: 'date'|'month'|'quarter'|'year', from?, to?, value? }
   const [isPlaygroundMaximized, setIsPlaygroundMaximized] = useState(false);
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(260);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(280);
+  const [loadSurfaceKey, setLoadSurfaceKey] = useState(0);
 
   /** Server-computed: collaborator fork differs from owner’s latest (owners only). */
   const [pendingCollaboratorSync, setPendingCollaboratorSync] =
@@ -307,12 +320,8 @@ const BiDashboard = () => {
   );
 
   const syncDisabled = useMemo(
-    () =>
-      !isOwner ||
-      !dashboardServerId ||
-      isReadOnly ||
-      pendingCollaboratorSync === false,
-    [isOwner, dashboardServerId, isReadOnly, pendingCollaboratorSync]
+    () => !isOwner || !dashboardServerId || isReadOnly,
+    [isOwner, dashboardServerId, isReadOnly]
   );
 
   /** Short label for shared access (owner uses full editor experience; no badge). */
@@ -333,6 +342,40 @@ const BiDashboard = () => {
   const startRightWidthRef = useRef(rightSidebarWidth);
 
   const selectedChart = charts.find((c) => c.id === selectedChartId);
+  const defaultDashboardLogoSrc = useMemo(() => {
+    if (typeof defaultDashboardLogo === 'string') return defaultDashboardLogo;
+    if (
+      defaultDashboardLogo &&
+      typeof defaultDashboardLogo === 'object' &&
+      typeof defaultDashboardLogo.src === 'string'
+    ) {
+      return defaultDashboardLogo.src;
+    }
+    return '';
+  }, []);
+  const dashboardLogoSrc = useMemo(() => {
+    if (typeof dashboardLogo === 'string') return dashboardLogo;
+    if (
+      dashboardLogo &&
+      typeof dashboardLogo === 'object' &&
+      typeof dashboardLogo.src === 'string'
+    ) {
+      return dashboardLogo.src;
+    }
+    return '';
+  }, [dashboardLogo]);
+  const headerLogoSrc = dashboardLogoSrc || defaultDashboardLogoSrc;
+  const bumpLoadSurfaceKey = useCallback(() => {
+    setLoadSurfaceKey((prev) => prev + 1);
+  }, []);
+
+  const refreshSavedDashboards = useCallback(async () => {
+    const res = await getDashboardsList();
+    const list = Array.isArray(res?.data) ? res.data : [];
+    setSavedDashboards(list);
+    return list;
+  }, []);
+
   // Keep stable callback identity: ChartItem emits rect changes via an effect,
   // and an unstable onLayoutChange prop can cause a render -> effect -> dispatch loop.
   const handleCanvasLayoutChange = useCallback(
@@ -344,8 +387,7 @@ const BiDashboard = () => {
 
   useEffect(() => {
     let cancelled = false;
-    getDashboardsList()
-      .then((res) => res.data)
+    refreshSavedDashboards()
       .then((list) => {
         if (!cancelled) setSavedDashboards(Array.isArray(list) ? list : []);
       })
@@ -355,7 +397,7 @@ const BiDashboard = () => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshSavedDashboards]);
 
   useEffect(() => {
     if (!dashboardServerId) {
@@ -538,7 +580,8 @@ const BiDashboard = () => {
       const isCSV = fileName.endsWith('.csv');
 
       if (!isJSON && !isCSV) {
-        setSaveStatus(BI_UI.INVALID_FILE_FORMAT);
+        infoMessage(BI_UI.INVALID_FILE_FORMAT);
+
         setTimeout(() => setSaveStatus(''), 3000);
         return;
       }
@@ -945,11 +988,7 @@ const BiDashboard = () => {
             if (json.userId != null) setDashboardOwnerId(String(json.userId));
             setDashboardEffectiveRole('Editor');
             setShareUrl(`${base}/dashboard/${id}`);
-            getDashboardsList()
-              .then((r) => r.data)
-              .then((list) =>
-                setSavedDashboards(Array.isArray(list) ? list : [])
-              );
+            refreshSavedDashboards().catch(() => {});
             setLastSavedHash(nextHash);
             try {
               localStorage.setItem(LAST_SAVED_HASH_KEY, nextHash);
@@ -1038,6 +1077,7 @@ const BiDashboard = () => {
     lastSavedHash,
     isReadOnly,
     dashboardServerId,
+    refreshSavedDashboards,
   ]);
 
   const handleShare = useCallback(() => {
@@ -1147,6 +1187,7 @@ const BiDashboard = () => {
               collection: loadedCollection,
             })
           );
+          bumpLoadSurfaceKey();
           setCollectionInput(loadedCollection);
           if (parsed.dashboardName != null)
             setDashboardName(parsed.dashboardName);
@@ -1175,8 +1216,7 @@ const BiDashboard = () => {
         setTimeout(() => setSaveStatus(''), 2000);
       }
     } else {
-      getDashboardsList()
-        .then((res) => res.data)
+      refreshSavedDashboards()
         .then((list) => {
           if (list?.length) {
             const latest = list[0];
@@ -1268,6 +1308,7 @@ const BiDashboard = () => {
                   collection: loadedCollection,
                 })
               );
+              bumpLoadSurfaceKey();
               setCollectionInput(loadedCollection);
               setDashboardName(deriveBaseName(latest));
               try {
@@ -1297,9 +1338,16 @@ const BiDashboard = () => {
         .catch(() => {
           setSaveStatus(BI_UI.LOAD_FAILED);
           setTimeout(() => setSaveStatus(''), 2000);
-        });
+        })
+        .catch(() => {});
     }
-  }, [dispatch, collection, isReadOnly]);
+  }, [
+    dispatch,
+    collection,
+    isReadOnly,
+    refreshSavedDashboards,
+    bumpLoadSurfaceKey,
+  ]);
 
   const appendRecentDashboardId = useCallback((loadedId) => {
     if (!loadedId) return;
@@ -1332,10 +1380,17 @@ const BiDashboard = () => {
           collection: loadedCollection,
         })
       );
+      bumpLoadSurfaceKey();
       setCollectionInput(loadedCollection);
       if (serverId) {
         setDashboardServerId(String(serverId));
+        if (data?.userId != null) setDashboardOwnerId(String(data.userId));
         setDashboardEffectiveRole(data?.effectiveRole || null);
+        if (typeof data?.pendingCollaboratorSync === 'boolean') {
+          setPendingCollaboratorSync(data.pendingCollaboratorSync);
+        } else {
+          setPendingCollaboratorSync(undefined);
+        }
         const base =
           typeof window !== 'undefined' ? window.location.origin : '';
         setShareUrl(`${base}/dashboard/${serverId}`);
@@ -1361,7 +1416,7 @@ const BiDashboard = () => {
       else setDashboardLogo(null);
       return true;
     },
-    [dispatch, appendRecentDashboardId]
+    [dispatch, appendRecentDashboardId, bumpLoadSurfaceKey]
   );
   const handleLoadDashboardById = useCallback(
     (id) => {
@@ -1501,7 +1556,7 @@ const BiDashboard = () => {
       const statusText =
         typeof data?.message === 'string' && data.message.trim()
           ? data.message.trim()
-          : 'Synced to latest';
+          : BI_UI.SYNCED_TO_LATEST;
       updateMessage({
         type: 'success',
         text: v != null && Number(v) > 0 ? `${statusText} (v${v})` : statusText,
@@ -1915,7 +1970,9 @@ const BiDashboard = () => {
               'FAST'
             );
             textLeft = margin + logoW + 4;
-          } catch (err) {}
+          } catch (err) {
+            console.warn('Failed to add logo to PDF header:', err);
+          }
         }
         pdfInstance.setFontSize(9);
         pdfInstance.setFont('helvetica', 'bold');
@@ -2587,23 +2644,29 @@ const BiDashboard = () => {
       {/* Main Header Section */}
       <header className={styles.biMainHeader}>
         <div className={styles.biHeaderLeft}>
-          {dashboardLogo ? (
-            <div className={styles.biLogoContainer}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={dashboardLogo}
-                alt='Dashboard logo'
-                className={styles.biLogo}
-              />
-            </div>
-          ) : null}
-          <h1 className={styles.biAppTitle}>Power BI Lite</h1>
+          <div className={styles.biLogoContainer}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={headerLogoSrc}
+              alt='Dashboard logo'
+              className={styles.biLogo}
+              onError={(e) => {
+                if (e.currentTarget.dataset.fallbackApplied === '1') {
+                  e.currentTarget.onerror = null;
+                  return;
+                }
+                e.currentTarget.dataset.fallbackApplied = '1';
+                e.currentTarget.src = defaultDashboardLogoSrc;
+              }}
+            />
+          </div>
+          <h1 className={styles.biAppTitle}>{APP_NAME}</h1>
         </div>
         <div className={styles.biHeaderRight}>
           <ProfileBar
             user={me}
             loading={meLoading}
-            dashboardLogo={dashboardLogo}
+            dashboardLogo={dashboardLogoSrc || null}
             onSetDashboardImage={
               isReadOnly ? undefined : () => logoInputRef.current?.click()
             }
@@ -2639,6 +2702,8 @@ const BiDashboard = () => {
         onDashboardNameChange={isReadOnly ? undefined : setDashboardName}
         recentDashboardIds={recentDashboardIds}
         onLoadDashboardById={handleLoadDashboardById}
+        onBeforeOpenLoadModal={refreshSavedDashboards}
+        onRefreshDashboards={refreshSavedDashboards}
         dataFilter={dataFilter}
         onDataFilterChange={setDataFilter}
         dateFields={fields.filter(
@@ -2653,6 +2718,7 @@ const BiDashboard = () => {
         loadModalNestedRows={loadModalNestedRows}
         onSyncShared={isOwner ? handleSyncShared : undefined}
         syncDisabled={syncDisabled}
+        syncHasPendingChanges={pendingCollaboratorSync}
         onClearPlayground={handleClearPlayground}
       />
 
@@ -2681,6 +2747,7 @@ const BiDashboard = () => {
 
         <main className={`${styles.biCanvas} bi-canvas`}>
           <ChartCanvas
+            key={`canvas-${loadSurfaceKey}-${dashboardServerId || 'local'}`}
             isPlaygroundMaximized={isPlaygroundMaximized}
             charts={charts}
             selectedChartId={selectedChartId}
@@ -2844,6 +2911,7 @@ const BiDashboard = () => {
         dashboardId={dashboardServerId}
         onClose={() => setShareModalOpen(false)}
         onShared={() => {
+          refreshSavedDashboards().catch(() => {});
           setSaveStatus(BI_UI.SHARED_OK);
           setTimeout(() => setSaveStatus(''), 2000);
         }}

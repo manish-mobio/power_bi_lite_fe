@@ -38,6 +38,8 @@ export const AUTH_UI = {
 
 export const SHARE_UI = {
   SHARE_DASHBOARD_FAILED: 'Failed to share dashboard',
+  SHARING_DASHBOARD: 'Sharing dashboard…',
+  DASHBOARD_SHARED: 'Dashboard shared',
 };
 
 export const FIELD_LIST_UI = {
@@ -109,6 +111,7 @@ export const BI_UI = {
   SYNCING_LATEST: 'Syncing latest…',
   NO_CHARTS_IN_SYNCED_DASHBOARD: 'No charts in synced dashboard',
   SYNC_FAILED: 'Sync failed',
+  SYNCED_TO_LATEST: 'Synced to latest',
 };
 
 export const FORMAT_UPLOAD_ERROR = (message) =>
@@ -130,3 +133,49 @@ export const FORMAT_PDF_DOWNLOADED_RECORDS = (count) =>
   `✓ PDF downloaded — ${count.toLocaleString()} records`;
 
 export const FORMAT_FAILED_LOAD_BY_ID = (status) => `Failed to load: ${status}`;
+
+export const DASHBOARD_ACCESS_UI = {
+  FAILED_TO_LOAD_ACCESS_LIST: 'Failed to load access list',
+  LOADING_ACCESS_LIST: 'Loading access list...',
+  DASHBOARD_NOT_SHARED: 'This dashboard is not shared with anyone right now.',
+  UPDATING_DASHBOARD_ACCESS: 'Updating dashboard access...',
+  COULD_NOT_REMOVE_USER: 'Could not remove this user from the dashboard',
+  ACCESS_UPDATED: 'Access updated',
+  COULD_NOT_UPDATE_DASHBOARD_ACCESS: 'Could not update dashboard access',
+  STOPPING_SHARING_FOR_ALL_USERS: 'Stopping sharing for all users...',
+  COULD_NOT_STOP_SHARING: 'Could not stop sharing',
+  SHARING_REMOVED_FOR_ALL_USERS: 'Sharing removed for all users',
+};
+
+export const TOOLBAR_UI = {
+  ONLY_EDITORS_CAN_SHARE: 'Only editors can share',
+  SHARE_DASHBOARD_WITH_USERS: 'Share dashboard with users',
+  SAVE_DASHBOARD_FIRST_TO_SHARE: 'Save dashboard first to share',
+  READ_ONLY_CLEAR_DISABLED: 'Read-only: clear disabled',
+  RESET_PLAYGROUND_UNSAVED_WORK_LOST: 'Reset playground (unsaved work is lost)',
+  ONLY_OWNER_CAN_MERGE_EDITS:
+    'Only the owner can merge collaborator edits into a new version',
+  NO_PENDING_CHANGES_DETECTED:
+    'No pending collaborator changes were detected, but you can still run sync to refresh from the server',
+  MERGE_LATEST_COLLABORATOR_EDITS:
+    'Merge latest collaborator edits into a new version on your dashboard',
+  READ_ONLY_COLLECTION_CANNOT_BE_CHANGED:
+    'Read-only (Viewer): collection cannot be changed',
+  CHOOSE_DATA_COLLECTION: 'Choose data collection',
+  VIEW_COLLECTION_DATA_AS_TABLE: 'View collection data as table',
+  SELECT_OR_UPLOAD_COLLECTION_FIRST: 'Select or upload a collection first',
+  READ_ONLY_UPLOAD_DISABLED: 'Read-only (Viewer): upload disabled',
+  UPLOAD_JSON_OR_CSV_DATA: 'Upload JSON or CSV data',
+  EXIT_FULL_SCREEN_CANVAS: 'Exit full-screen canvas',
+  MAXIMIZE_CHART_CANVAS_AREA: 'Maximize chart canvas area',
+  READ_ONLY_SAVE_DISABLED: 'Read-only (Viewer): save disabled',
+  ADD_AT_LEAST_ONE_CHART_BEFORE_SAVING: 'Add at least one chart before saving',
+  SAVE_DASHBOARD: 'Save dashboard',
+  READ_ONLY_LOADING_ANOTHER_DASHBOARD_DISABLED:
+    'Read-only (Viewer): loading another dashboard is disabled',
+  REFRESHING_SAVED_DASHBOARDS: 'Refreshing saved dashboards...',
+  OPEN_SAVED_DASHBOARDS: 'Open saved dashboards',
+  LOAD_LATEST_FROM_SERVER_OR_LOCAL: 'Load latest from server or local',
+  FILTER_DATA_BY_DATE: 'Filter data by date',
+  ACTIVE_FILTER: 'Active',
+};
