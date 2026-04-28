@@ -118,7 +118,7 @@ export default function ShareDashboardModal({
     if (!dashboardId) return;
     setSubmitError('');
     setSubmitting(true);
-    loadingMessage('Sharing dashboard…', 'share-dashboard');
+    loadingMessage(SHARE_UI.SHARING_DASHBOARD, 'share-dashboard');
     try {
       const payload = {
         shares: selected.map((s) => ({
@@ -140,7 +140,7 @@ export default function ShareDashboardModal({
 
       updateMessage({
         type: 'success',
-        text: 'Dashboard shared',
+        text: SHARE_UI.DASHBOARD_SHARED,
         key: 'share-dashboard',
         duration: 2,
       });

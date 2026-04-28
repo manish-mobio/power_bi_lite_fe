@@ -8,6 +8,7 @@ import {
 } from '@/services/biService';
 import { isHttpSuccessStatus } from '@/utils/statusCode';
 import { loadingMessage, updateMessage } from '@/utils/commonFunctions';
+import { DASHBOARD_ACCESS_UI } from '@/utils/messages';
 import styles from './DashboardAccessModal.module.css';
 import { normalizeSharedUser } from '@/utils/dashboard';
 
@@ -62,7 +63,7 @@ export default function DashboardAccessModal({
       .then((res) => {
         if (cancelled) return;
         if (!isHttpSuccessStatus(res.status)) {
-          throw new Error('Failed to load access list');
+          throw new Error(DASHBOARD_ACCESS_UI.FAILED_TO_LOAD_ACCESS_LIST);
         }
         const data = res?.data || {};
         const sharedWith = Array.isArray(data?.sharedWith)
@@ -73,7 +74,9 @@ export default function DashboardAccessModal({
       .catch((e) => {
         if (!cancelled) {
           setUsers([]);
-          setError(e?.message || 'Failed to load access list');
+          setError(
+            e?.message || DASHBOARD_ACCESS_UI.FAILED_TO_LOAD_ACCESS_LIST
+          );
         }
       })
       .finally(() => {
@@ -86,9 +89,9 @@ export default function DashboardAccessModal({
   }, [open, dashboardId, startInRevokeConfirm]);
 
   const emptyState = useMemo(() => {
-    if (loading) return 'Loading access list...';
+    if (loading) return DASHBOARD_ACCESS_UI.LOADING_ACCESS_LIST;
     if (error) return error;
-    return 'This dashboard is not shared with anyone right now.';
+    return DASHBOARD_ACCESS_UI.DASHBOARD_NOT_SHARED;
   }, [loading, error]);
 
   const removeUser = async (userId) => {
@@ -96,7 +99,10 @@ export default function DashboardAccessModal({
     const nextUsers = users.filter((user) => user.userId !== String(userId));
     setSaving(true);
     setError('');
-    loadingMessage('Updating dashboard access...', 'dashboard-access');
+    loadingMessage(
+      DASHBOARD_ACCESS_UI.UPDATING_DASHBOARD_ACCESS,
+      'dashboard-access'
+    );
     try {
       const res = await replaceSharesWithFallback(
         dashboardId,
@@ -108,22 +114,25 @@ export default function DashboardAccessModal({
       );
       if (!isHttpSuccessStatus(res.status)) {
         throw new Error(
-          res?.data?.error || 'Could not remove this user from the dashboard'
+          res?.data?.error || DASHBOARD_ACCESS_UI.COULD_NOT_REMOVE_USER
         );
       }
       setUsers(nextUsers);
       updateMessage({
         type: 'success',
-        text: 'Access updated',
+        text: DASHBOARD_ACCESS_UI.ACCESS_UPDATED,
         key: 'dashboard-access',
         duration: 2,
       });
       onAccessUpdated?.();
     } catch (e) {
-      setError(e?.message || 'Could not update dashboard access');
+      setError(
+        e?.message || DASHBOARD_ACCESS_UI.COULD_NOT_UPDATE_DASHBOARD_ACCESS
+      );
       updateMessage({
         type: 'error',
-        text: e?.message || 'Could not update dashboard access',
+        text:
+          e?.message || DASHBOARD_ACCESS_UI.COULD_NOT_UPDATE_DASHBOARD_ACCESS,
         key: 'dashboard-access',
         duration: 3,
       });
@@ -136,26 +145,31 @@ export default function DashboardAccessModal({
     if (!dashboardId || saving) return;
     setSaving(true);
     setError('');
-    loadingMessage('Stopping sharing for all users...', 'dashboard-access');
+    loadingMessage(
+      DASHBOARD_ACCESS_UI.STOPPING_SHARING_FOR_ALL_USERS,
+      'dashboard-access'
+    );
     try {
       const res = await revokeSharesWithFallback(dashboardId);
       if (!isHttpSuccessStatus(res.status)) {
-        throw new Error(res?.data?.error || 'Could not stop sharing');
+        throw new Error(
+          res?.data?.error || DASHBOARD_ACCESS_UI.COULD_NOT_STOP_SHARING
+        );
       }
       setUsers([]);
       setConfirmRevokeAll(false);
       updateMessage({
         type: 'success',
-        text: 'Sharing removed for all users',
+        text: DASHBOARD_ACCESS_UI.SHARING_REMOVED_FOR_ALL_USERS,
         key: 'dashboard-access',
         duration: 2,
       });
       onAccessUpdated?.();
     } catch (e) {
-      setError(e?.message || 'Could not stop sharing');
+      setError(e?.message || DASHBOARD_ACCESS_UI.COULD_NOT_STOP_SHARING);
       updateMessage({
         type: 'error',
-        text: e?.message || 'Could not stop sharing',
+        text: e?.message || DASHBOARD_ACCESS_UI.COULD_NOT_STOP_SHARING,
         key: 'dashboard-access',
         duration: 3,
       });

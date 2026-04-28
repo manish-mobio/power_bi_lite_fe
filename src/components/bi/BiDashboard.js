@@ -1556,7 +1556,7 @@ const BiDashboard = () => {
       const statusText =
         typeof data?.message === 'string' && data.message.trim()
           ? data.message.trim()
-          : 'Synced to latest';
+          : BI_UI.SYNCED_TO_LATEST;
       updateMessage({
         type: 'success',
         text: v != null && Number(v) > 0 ? `${statusText} (v${v})` : statusText,
