@@ -63,6 +63,7 @@ import {
   errorMessage,
   infoMessage,
   loadingMessage,
+  successMessage,
   updateMessage,
 } from '@/utils/commonFunctions';
 import defaultDashboardLogo from '../../assets/Dashboard.png';
@@ -905,8 +906,9 @@ const BiDashboard = () => {
   const performLogout = useCallback(async () => {
     try {
       await logoutRequest();
+      successMessage(BI_UI.LOGOUT_SUCCESS);
     } catch {
-      // ignore network failures and still navigate to login
+      infoMessage(BI_UI.LOGOUT_REDIRECT_LOGIN);
     } finally {
       if (typeof window !== 'undefined') {
         window.location.assign('/login');

@@ -5,6 +5,7 @@ import { AiOutlineEye, AiOutlineEyeInvisible } from 'react-icons/ai';
 import { AUTH_UI } from '@/utils/messages';
 import { isHttpSuccessStatus } from '@/utils/statusCode';
 import { signupRequest } from '@/services/authService';
+import { errorMessage } from '@/utils/commonFunctions';
 import authForm from '../styles/AuthForm.module.css';
 
 export default function SignupPage() {
@@ -13,12 +14,10 @@ export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setIsSubmitting(true);
     try {
       const res = await signupRequest({ name, email, password });
@@ -27,18 +26,13 @@ export default function SignupPage() {
           ? res.data
           : {};
       if (!isHttpSuccessStatus(res.status)) {
-        setError(data?.error || AUTH_UI.SIGNUP_FAILED);
+        errorMessage(data?.error || AUTH_UI.SIGNUP_FAILED);
         setIsSubmitting(false);
         return;
       }
-      const redirect = router.query?.redirect;
-      const target =
-        typeof redirect === 'string' && redirect.trim()
-          ? redirect
-          : '/bi-dashboard';
-      await router.replace(target);
+      await router.replace('/login?signup=success');
     } catch (err) {
-      setError(err.message || AUTH_UI.SIGNUP_FAILED);
+      errorMessage(err.message || AUTH_UI.SIGNUP_FAILED);
       setIsSubmitting(false);
     }
   };
@@ -143,14 +137,6 @@ export default function SignupPage() {
             'Create account'
           )}
         </button>
-        {error ? (
-          <div
-            style={{ marginTop: 10, color: '#b91c1c', fontSize: 12 }}
-            role='alert'
-          >
-            {error}
-          </div>
-        ) : null}
         <div style={{ marginTop: 12, fontSize: 12, color: '#475569' }}>
           Already have an account? <Link href='/login'>Log in</Link>
         </div>
