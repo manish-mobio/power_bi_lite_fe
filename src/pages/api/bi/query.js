@@ -84,7 +84,6 @@ export default async function handler(req, res) {
     });
   }
 }
-
 /**
  * Generate aggregation pipeline (MongoDB-style, run in memory)
  * Supports:
