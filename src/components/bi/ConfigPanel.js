@@ -10,21 +10,11 @@ import {
   CHART_TYPE_ICONS,
   SORT_ORDERS,
   SORT_BY_OPTIONS,
+  CHART_TYPE_LABELS,
 } from '@/utils/chartTypes';
 import { Select } from 'antd';
+import { STACKED_BAR_CHART_KEY } from '@/utils/constants';
 const { Option } = Select;
-
-const CHART_TYPE_LABELS = {
-  bar: 'Bar',
-  line: 'Line',
-  pie: 'Pie',
-  area: 'Area',
-  stackedBar: 'Stacked Bar',
-  donut: 'Donut',
-  scatter: 'Scatter',
-  card: 'Card',
-  table: 'Table',
-};
 
 const ConfigPanel = ({
   config,
@@ -104,11 +94,11 @@ const ConfigPanel = ({
       : `${config.measure?.field || 'Value'} (${config.measure?.op || 'COUNT'})`;
 
   const defaultHorizontalAxisTitle =
-    config.type === 'stackedBar'
+    config.type === STACKED_BAR_CHART_KEY
       ? defaultValueAxisLabel
       : defaultDimensionAxisLabel;
   const defaultVerticalAxisTitle =
-    config.type === 'stackedBar'
+    config.type === STACKED_BAR_CHART_KEY
       ? defaultDimensionAxisLabel
       : defaultValueAxisLabel;
 
@@ -407,7 +397,7 @@ const ConfigPanel = ({
               </div>
             </div>
 
-            {config.type === 'stackedBar' && (
+            {config.type === STACKED_BAR_CHART_KEY && (
               <p
                 className='bi-config-hint'
                 style={{ margin: '0 0 8px', fontSize: 12, color: '#64748b' }}
