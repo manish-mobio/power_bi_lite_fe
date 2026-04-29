@@ -81,7 +81,13 @@ export const FORMAT_FAILED_LOAD_DASHBOARD = (status) =>
 export const BI_UI = {
   EXPORT_AREA_NOT_FOUND: 'Export area not found',
   NO_TABLE_DATA_FOR_PDF: 'No table data found',
-  INVALID_FILE_FORMAT: 'Invalid file format. Please upload JSON or CSV file.',
+  INVALID_FILE_FORMAT:
+    'Invalid file format. Please upload CSV, JSON, or XLSX file.',
+  UNSUPPORTED_FILE_TYPE: 'Invalid file format',
+  FILE_EMPTY: 'File is empty',
+  FILE_TOO_LARGE: 'File is too large',
+  FILE_PARSE_ERROR: 'Unable to parse file',
+  FILE_UPLOAD_FORMATS_HINT: 'Supported: .csv, .json, .xlsx',
   UPLOADING_FILE: 'Uploading and parsing file...',
   DASHBOARD_LOADED_OK: 'Dashboard loaded successfully',
   UPLOAD_FAILED: 'Upload failed',
