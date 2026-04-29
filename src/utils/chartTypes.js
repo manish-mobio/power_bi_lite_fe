@@ -46,7 +46,17 @@ export const CHART_TYPES = [
 ];
 export const SORT_ORDERS = ['asc', 'desc'];
 export const SORT_BY_OPTIONS = ['dimension', 'measure'];
-
+export const CHART_TYPE_LABELS = {
+  bar: 'Bar',
+  line: 'Line',
+  pie: 'Pie',
+  area: 'Area',
+  stackedBar: 'Stacked Bar',
+  donut: 'Donut',
+  scatter: 'Scatter',
+  card: 'Card',
+  table: 'Table',
+};
 export const CHART_TYPE_ICONS = {
   bar: <BarChartOutlined />,
   line: <LineChartOutlined />,

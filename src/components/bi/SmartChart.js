@@ -15,6 +15,7 @@ import ReactECharts from 'echarts-for-react';
 import { CHART_UI } from '@/utils/messages';
 import { postBiQuery } from '@/services/biService';
 import { COLOR_THEMES } from '@/utils/colors';
+import { STACKED_BAR_CHART_KEY } from '@/utils/constants';
 
 const SmartChart = ({
   config,
@@ -223,9 +224,9 @@ const SmartChart = ({
         : `${config.measure?.field || 'Value'} (${config.measure?.op || 'COUNT'})`;
 
     const defaultOptionXAxisName =
-      config.type === 'stackedBar' ? yAxisName : xAxisName;
+      config.type === STACKED_BAR_CHART_KEY ? yAxisName : xAxisName;
     const defaultOptionYAxisName =
-      config.type === 'stackedBar' ? xAxisName : yAxisName;
+      config.type === STACKED_BAR_CHART_KEY ? xAxisName : yAxisName;
 
     const trimOverride = (v) =>
       v != null && String(v).trim() !== '' ? String(v).trim() : null;
@@ -572,7 +573,7 @@ const SmartChart = ({
         };
       }
 
-      case 'stackedBar': {
+      case STACKED_BAR_CHART_KEY: {
         // Stacked bar: horizontal bars (category on Y-axis, value on X)
         const stackedLeft =
           maxCatLabelLen > 16 || yTitleLen > 20
