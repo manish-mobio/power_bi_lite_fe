@@ -97,6 +97,21 @@ const ConfigPanel = ({
     return [];
   })();
 
+  const defaultDimensionAxisLabel = config.dimension || 'Category';
+  const defaultValueAxisLabel =
+    normalizedMetrics.length > 0
+      ? normalizedMetrics.map((m) => `${m.field} (${m.op})`).join(', ')
+      : `${config.measure?.field || 'Value'} (${config.measure?.op || 'COUNT'})`;
+
+  const defaultHorizontalAxisTitle =
+    config.type === 'stackedBar'
+      ? defaultValueAxisLabel
+      : defaultDimensionAxisLabel;
+  const defaultVerticalAxisTitle =
+    config.type === 'stackedBar'
+      ? defaultDimensionAxisLabel
+      : defaultValueAxisLabel;
+
   const updateMetrics = (nextMetrics) => {
     const cleaned = nextMetrics.filter((m) => m && m.field);
     const primary = cleaned[0] || null;
@@ -116,41 +131,61 @@ const ConfigPanel = ({
   };
 
   const handleChange = (key, value) => {
-    if (key === 'dimension') {
-      onUpdate({ dimension: value });
-    } else if (key === 'measureField') {
-      onUpdate({ measure: { ...config.measure, field: value } });
-    } else if (key === 'measureOp') {
-      onUpdate({ measure: { ...config.measure, op: value } });
-    } else if (key === 'type') {
-      // When switching chart type, keep existing limit; only default table to a reasonable min if very small
-      const updates = { type: value };
-      const maxLimit =
-        typeof recordCount === 'number' && recordCount > 0
-          ? recordCount
-          : value === 'table'
-            ? 10000
-            : 1000;
-      if (value === 'table' && (!config.limit || config.limit < 50)) {
-        updates.limit = Math.min(maxLimit, 100);
+    switch (key) {
+      case 'dimension':
+        onUpdate({ dimension: value });
+        break;
+      case 'measureField':
+        onUpdate({ measure: { ...config.measure, field: value } });
+        break;
+      case 'measureOp':
+        onUpdate({ measure: { ...config.measure, op: value } });
+        break;
+      case 'type': {
+        // When switching chart type, keep existing limit; only default table to a reasonable min if very small
+        const updates = { type: value };
+        const maxLimit =
+          typeof recordCount === 'number' && recordCount > 0
+            ? recordCount
+            : value === 'table'
+              ? 10000
+              : 1000;
+        if (value === 'table' && (!config.limit || config.limit < 50)) {
+          updates.limit = Math.min(maxLimit, 100);
+        }
+        // Do not reset limit to 10 when switching to non-table — keep current limit or user will use max
+        onUpdate(updates);
+        break;
       }
-      // Do not reset limit to 10 when switching to non-table — keep current limit or user will use max
-      onUpdate(updates);
-    } else if (key === 'limit') {
-      const num = parseInt(value, 10);
-      const maxLimit =
-        typeof recordCount === 'number' && recordCount > 0
-          ? recordCount
-          : 10000;
-      onUpdate({ limit: Math.min(maxLimit, Math.max(1, num || 1)) });
-    } else if (key === 'title') {
-      onUpdate({ title: value === '' ? undefined : value });
-    } else if (key === 'sortBy') {
-      onUpdate({ sortBy: value });
-    } else if (key === 'sortOrder') {
-      onUpdate({ sortOrder: value });
-    } else if (key === 'selectedFields') {
-      onUpdate({ selectedFields: value });
+      case 'limit': {
+        const num = parseInt(value, 10);
+        const maxLimit =
+          typeof recordCount === 'number' && recordCount > 0
+            ? recordCount
+            : 10000;
+        onUpdate({ limit: Math.min(maxLimit, Math.max(1, num || 1)) });
+        break;
+      }
+      case 'title':
+        onUpdate({ title: value === '' ? undefined : value });
+        break;
+      case 'xAxisTitle':
+        onUpdate({ xAxisTitle: value === '' ? undefined : value });
+        break;
+      case 'yAxisTitle':
+        onUpdate({ yAxisTitle: value === '' ? undefined : value });
+        break;
+      case 'sortBy':
+        onUpdate({ sortBy: value });
+        break;
+      case 'sortOrder':
+        onUpdate({ sortOrder: value });
+        break;
+      case 'selectedFields':
+        onUpdate({ selectedFields: value });
+        break;
+      default:
+        break;
     }
   };
 
@@ -370,6 +405,36 @@ const ConfigPanel = ({
                   + Add Y-axis
                 </button>
               </div>
+            </div>
+
+            {config.type === 'stackedBar' && (
+              <p
+                className='bi-config-hint'
+                style={{ margin: '0 0 8px', fontSize: 12, color: '#64748b' }}
+              >
+                Stacked bar: horizontal axis is values; vertical axis is
+                categories.
+              </p>
+            )}
+            <div className='bi-config-row'>
+              <label>Horizontal axis title</label>
+              <input
+                type='text'
+                className='bi-config-input'
+                placeholder={defaultHorizontalAxisTitle}
+                value={config.xAxisTitle ?? ''}
+                onChange={(e) => handleChange('xAxisTitle', e.target.value)}
+              />
+            </div>
+            <div className='bi-config-row'>
+              <label>Vertical axis title</label>
+              <input
+                type='text'
+                className='bi-config-input'
+                placeholder={defaultVerticalAxisTitle}
+                value={config.yAxisTitle ?? ''}
+                onChange={(e) => handleChange('yAxisTitle', e.target.value)}
+              />
             </div>
 
             <div className='bi-config-row'>

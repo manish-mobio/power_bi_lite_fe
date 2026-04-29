@@ -35,29 +35,47 @@ const SmartChart = ({
   const menuRef = useRef(null);
   const titleInputRef = useRef(null);
 
+  const queryPayload = useMemo(
+    () => ({
+      id: config?.id,
+      collection: config?.collection,
+      type: config?.type,
+      dimension: config?.dimension,
+      legendField: config?.legendField,
+      measure: config?.measure,
+      measureFields: config?.measureFields,
+      metrics: config?.metrics,
+      limit: config?.limit,
+      selectedFields: config?.selectedFields,
+      sortBy: config?.sortBy,
+      sortOrder: config?.sortOrder,
+      filter: globalFilter || undefined,
+    }),
+    [
+      config?.id,
+      config?.collection,
+      config?.type,
+      config?.dimension,
+      config?.legendField,
+      config?.measure,
+      config?.measureFields,
+      config?.metrics,
+      config?.limit,
+      config?.selectedFields,
+      config?.sortBy,
+      config?.sortOrder,
+      globalFilter,
+    ]
+  );
+
   const fetchData = useCallback(() => {
-    if (!config) return;
+    if (!queryPayload.id || !queryPayload.collection) return;
 
     let cancelled = false;
     setLoading(true);
     setError(null);
 
-    const body = {
-      id: config.id,
-      collection: config.collection,
-      type: config.type,
-      dimension: config.dimension,
-      legendField: config.legendField,
-      measure: config.measure,
-      measureFields: config.measureFields,
-      metrics: config.metrics,
-      limit: config.limit,
-      selectedFields: config.selectedFields,
-      sortBy: config.sortBy,
-      sortOrder: config.sortOrder,
-      filter: globalFilter || undefined,
-    };
-    postBiQuery(body)
+    postBiQuery(queryPayload)
       .then((res) => res.data)
       .then((result) => {
         if (cancelled) return;
@@ -83,7 +101,7 @@ const SmartChart = ({
     return () => {
       cancelled = true;
     };
-  }, [config, globalFilter]);
+  }, [queryPayload]);
 
   useEffect(() => {
     fetchData();
@@ -201,11 +219,21 @@ const SmartChart = ({
     const xAxisName = config.dimension || 'Category';
     const yAxisName =
       normalizedMetrics.length > 0
-        ? normalizedMetrics
-            .map((m) => `${m.field} (${m.op})`)
-            .join(', ')
-            .slice(0, 80)
+        ? normalizedMetrics.map((m) => `${m.field} (${m.op})`).join(', ')
         : `${config.measure?.field || 'Value'} (${config.measure?.op || 'COUNT'})`;
+
+    const defaultOptionXAxisName =
+      config.type === 'stackedBar' ? yAxisName : xAxisName;
+    const defaultOptionYAxisName =
+      config.type === 'stackedBar' ? xAxisName : yAxisName;
+
+    const trimOverride = (v) =>
+      v != null && String(v).trim() !== '' ? String(v).trim() : null;
+
+    const optionXName =
+      trimOverride(config.xAxisTitle) ?? defaultOptionXAxisName;
+    const optionYName =
+      trimOverride(config.yAxisTitle) ?? defaultOptionYAxisName;
 
     const singleSeriesValues =
       !hasLegendField && !hasMultipleSeries
@@ -219,14 +247,90 @@ const SmartChart = ({
           })
         : null;
 
-    // Shared X-axis label config: show all labels, rotate when many/long, prevent truncation
+    // Shared X-axis label config: show all labels, rotate when many/long; tick truncate + hover via ECharts
     const hasManyCategories = names.length > 6;
     const isIdOrLongLabels =
       config.dimension === '_id' ||
       names.some((n) => n && String(n).length > 10);
     const needRotate = hasManyCategories || isIdOrLongLabels;
+
+    const maxCatLabelLen = names.length
+      ? Math.max(...names.map((n) => String(n ?? '').length))
+      : 0;
+
+    const xTitleLen = String(optionXName ?? '').length;
+    const yTitleLen = String(optionYName ?? '').length;
+
+    const maxYValue = (() => {
+      let m = 0;
+      for (const row of data) {
+        if (typeof row.value === 'number' && !Number.isNaN(row.value)) {
+          m = Math.max(m, row.value);
+        }
+        for (const k of measureFieldKeys) {
+          if (typeof row[k] === 'number' && !Number.isNaN(row[k])) {
+            m = Math.max(m, row[k]);
+          }
+        }
+      }
+      return m;
+    })();
+
+    const yTickLabelChars = (() => {
+      const v = maxYValue;
+      if (!Number.isFinite(v)) return 6;
+      const abs = Math.abs(v);
+      if (abs >= 1e15) return String(v.toExponential(1)).length + 1;
+      return Math.ceil(abs).toLocaleString('en-US').length;
+    })();
+
+    const valueYNameGap = 52 + Math.min(72, yTickLabelChars * 8);
+    const valueYAxisLabelMargin = 10 + Math.min(32, yTickLabelChars * 2);
+
+    const truncateCategoryTicks =
+      maxCatLabelLen > 14 ||
+      hasManyCategories ||
+      isIdOrLongLabels ||
+      needRotate;
+
     const gridBottom =
-      config.dimension === '_id' ? '22%' : needRotate ? '18%' : '3%';
+      config.dimension === '_id'
+        ? '22%'
+        : needRotate
+          ? `${Math.min(
+              44,
+              26 +
+                Math.min(10, Math.floor(names.length * 0.35)) +
+                Math.min(8, Math.floor(maxCatLabelLen / 5))
+            )}%`
+          : xTitleLen > 18 || maxCatLabelLen > 12
+            ? '20%'
+            : '16%';
+
+    const gridLeftForCartesian =
+      config.type === 'bar' ||
+      config.type === 'line' ||
+      config.type === 'area' ||
+      config.type === 'scatter'
+        ? `${Math.min(
+            34,
+            (yTitleLen > 28
+              ? 24
+              : yTitleLen > 20
+                ? 18
+                : yTitleLen > 14
+                  ? 15
+                  : 12) + Math.min(6, Math.floor(yTickLabelChars * 0.9))
+          )}%`
+        : null;
+
+    const xAxisCategoryNameGap = needRotate
+      ? 68 +
+        Math.min(
+          48,
+          Math.floor(names.length * 1.5) + Math.floor(maxCatLabelLen * 0.35)
+        )
+      : 40 + (xTitleLen > 14 ? 10 : 0);
 
     const axisFontKey = config.axisLabelFontStyle || 'regular';
     const axisFontMap = {
@@ -239,34 +343,66 @@ const SmartChart = ({
 
     const xAxisLabelColor = config.xAxisLabelColor || theme.axisLabelColor;
     const yAxisLabelColor = config.yAxisLabelColor || theme.axisLabelColor;
+
+    const axisNameTruncate = { maxWidth: 160, ellipsis: '…' };
+
+    const categoryAxisLabelBase = {
+      interval: 0,
+      rotate: needRotate ? 45 : 0,
+      showMinLabel: true,
+      showMaxLabel: true,
+      margin: needRotate ? 14 : 10,
+      color: xAxisLabelColor,
+      fontSize: needRotate ? 11 : 12,
+      fontStyle: axisFont.fontStyle,
+      fontWeight: axisFont.fontWeight,
+      ...(truncateCategoryTicks
+        ? {
+            width: needRotate ? 96 : 120,
+            overflow: 'truncate',
+            ellipsis: '…',
+          }
+        : {}),
+    };
+
     const categoryXAxis = {
       type: 'category',
       data: names,
-      name: xAxisName,
+      name: optionXName,
       nameLocation: 'middle',
-      nameGap: needRotate ? 46 : 32,
+      nameGap: xAxisCategoryNameGap,
+      nameTruncate: axisNameTruncate,
+      nameMoveOverlap: true,
+      triggerEvent: true,
+      tooltip: { show: true },
       nameTextStyle: {
         color: xAxisLabelColor,
         fontSize: 12,
         fontWeight: 600,
       },
+      axisLabel: categoryAxisLabelBase,
+    };
+
+    const cartesianValueYAxis = {
+      type: 'value',
+      name: optionYName,
+      nameLocation: 'middle',
+      nameGap: valueYNameGap,
+      nameRotate: 90,
+      nameTruncate: axisNameTruncate,
+      nameMoveOverlap: true,
+      triggerEvent: true,
+      tooltip: { show: true },
+      nameTextStyle: {
+        color: yAxisLabelColor,
+        fontSize: 12,
+        fontWeight: 600,
+      },
       axisLabel: {
-        interval: 0,
-        rotate: needRotate ? 45 : 0,
-        showMinLabel: true,
-        showMaxLabel: true,
-        formatter: (value) => {
-          if (!value) return value;
-          const str = String(value);
-          if (str.length > 14) return str.substring(0, 14) + '…';
-          return str;
-        },
-        textStyle: {
-          fontSize: needRotate ? 11 : 12,
-          color: xAxisLabelColor,
-          fontStyle: axisFont.fontStyle,
-          fontWeight: axisFont.fontWeight,
-        },
+        margin: valueYAxisLabelMargin,
+        color: yAxisLabelColor,
+        fontStyle: axisFont.fontStyle,
+        fontWeight: axisFont.fontWeight,
       },
     };
 
@@ -278,14 +414,7 @@ const SmartChart = ({
           config.type === 'pie' || config.type === 'donut' ? 'item' : 'axis',
       },
       grid: {
-        // Leave enough room for axis titles (especially Y-axis name)
-        left:
-          config.type === 'bar' ||
-          config.type === 'line' ||
-          config.type === 'area' ||
-          config.type === 'scatter'
-            ? '12%'
-            : '3%',
+        left: gridLeftForCartesian ?? '3%',
         right: '4%',
         bottom: gridBottom,
         top: '10%',
@@ -369,23 +498,7 @@ const SmartChart = ({
         return {
           ...baseOption,
           xAxis: { ...categoryXAxis, boundaryGap: false },
-          yAxis: {
-            type: 'value',
-            name: yAxisName,
-            nameLocation: 'middle',
-            nameGap: 38,
-            nameRotate: 90,
-            nameTextStyle: {
-              color: yAxisLabelColor,
-              fontSize: 12,
-              fontWeight: 600,
-            },
-            axisLabel: {
-              color: yAxisLabelColor,
-              fontStyle: axisFont.fontStyle,
-              fontWeight: axisFont.fontWeight,
-            },
-          },
+          yAxis: { ...cartesianValueYAxis },
           series: hasMultipleSeries
             ? measureFieldKeys.map((field) => ({
                 name: field,
@@ -423,23 +536,7 @@ const SmartChart = ({
         return {
           ...baseOption,
           xAxis: { ...categoryXAxis, boundaryGap: false },
-          yAxis: {
-            type: 'value',
-            name: yAxisName,
-            nameLocation: 'middle',
-            nameGap: 38,
-            nameRotate: 90,
-            nameTextStyle: {
-              color: yAxisLabelColor,
-              fontSize: 12,
-              fontWeight: 600,
-            },
-            axisLabel: {
-              color: yAxisLabelColor,
-              fontStyle: axisFont.fontStyle,
-              fontWeight: axisFont.fontWeight,
-            },
-          },
+          yAxis: { ...cartesianValueYAxis },
           series: hasMultipleSeries
             ? measureFieldKeys.map((field) => ({
                 name: field,
@@ -477,33 +574,55 @@ const SmartChart = ({
 
       case 'stackedBar': {
         // Stacked bar: horizontal bars (category on Y-axis, value on X)
+        const stackedLeft =
+          maxCatLabelLen > 16 || yTitleLen > 20
+            ? '26%'
+            : maxCatLabelLen > 10
+              ? '20%'
+              : '15%';
+        const stackedBottom = xTitleLen > 24 ? '12%' : '10%';
+
         return {
           ...baseOption,
           grid: {
-            left: '15%',
+            left: stackedLeft,
             right: '4%',
-            bottom: '8%',
+            bottom: stackedBottom,
             top: 36,
             containLabel: true,
           },
           xAxis: {
             type: 'value',
-            name: yAxisName,
+            name: optionXName,
             nameLocation: 'middle',
-            nameGap: 26,
+            nameGap: 32 + Math.min(36, yTickLabelChars * 2.5),
+            nameTruncate: axisNameTruncate,
+            nameMoveOverlap: true,
+            triggerEvent: true,
+            tooltip: { show: true },
             nameTextStyle: {
               color: xAxisLabelColor,
               fontSize: 12,
               fontWeight: 600,
             },
+            axisLabel: {
+              margin: 8 + Math.min(20, yTickLabelChars * 2),
+              color: xAxisLabelColor,
+              fontStyle: axisFont.fontStyle,
+              fontWeight: axisFont.fontWeight,
+            },
           },
           yAxis: {
             type: 'category',
             data: names,
-            name: xAxisName,
+            name: optionYName,
             nameLocation: 'middle',
-            nameGap: 62,
+            nameGap: 68 + Math.min(50, yTitleLen * 0.9 + maxCatLabelLen * 0.25),
             nameRotate: 90,
+            nameTruncate: axisNameTruncate,
+            nameMoveOverlap: true,
+            triggerEvent: true,
+            tooltip: { show: true },
             nameTextStyle: {
               color: yAxisLabelColor,
               fontSize: 12,
@@ -511,18 +630,18 @@ const SmartChart = ({
             },
             axisLabel: {
               interval: 0,
-              formatter: (value) => {
-                if (!value) return value;
-                const str = String(value);
-                if (str.length > 14) return str.substring(0, 14) + '…';
-                return str;
-              },
-              textStyle: {
-                fontSize: 12,
-                color: yAxisLabelColor,
-                fontStyle: axisFont.fontStyle,
-                fontWeight: axisFont.fontWeight,
-              },
+              margin: 10 + Math.min(18, Math.floor(maxCatLabelLen * 0.35)),
+              ...(truncateCategoryTicks
+                ? {
+                    width: 120,
+                    overflow: 'truncate',
+                    ellipsis: '…',
+                  }
+                : {}),
+              fontSize: 12,
+              color: yAxisLabelColor,
+              fontStyle: axisFont.fontStyle,
+              fontWeight: axisFont.fontWeight,
             },
           },
           series: hasMultipleSeries
@@ -565,23 +684,7 @@ const SmartChart = ({
         return {
           ...baseOption,
           xAxis: categoryXAxis,
-          yAxis: {
-            type: 'value',
-            name: yAxisName,
-            nameLocation: 'middle',
-            nameGap: 38,
-            nameRotate: 90,
-            nameTextStyle: {
-              color: yAxisLabelColor,
-              fontSize: 12,
-              fontWeight: 600,
-            },
-            axisLabel: {
-              color: yAxisLabelColor,
-              fontStyle: axisFont.fontStyle,
-              fontWeight: axisFont.fontWeight,
-            },
-          },
+          yAxis: { ...cartesianValueYAxis },
           series: hasMultipleSeries
             ? measureFieldKeys.map((field) => ({
                 name: field,
@@ -677,23 +780,7 @@ const SmartChart = ({
           return {
             ...baseOption,
             xAxis: categoryXAxis,
-            yAxis: {
-              type: 'value',
-              name: yAxisName,
-              nameLocation: 'middle',
-              nameGap: 38,
-              nameRotate: 90,
-              nameTextStyle: {
-                color: yAxisLabelColor,
-                fontSize: 12,
-                fontWeight: 600,
-              },
-              axisLabel: {
-                color: yAxisLabelColor,
-                fontStyle: axisFont.fontStyle,
-                fontWeight: axisFont.fontWeight,
-              },
-            },
+            yAxis: { ...cartesianValueYAxis },
             series,
           };
         }
@@ -702,23 +789,7 @@ const SmartChart = ({
         return {
           ...baseOption,
           xAxis: categoryXAxis,
-          yAxis: {
-            type: 'value',
-            name: yAxisName,
-            nameLocation: 'middle',
-            nameGap: 38,
-            nameRotate: 90,
-            nameTextStyle: {
-              color: yAxisLabelColor,
-              fontSize: 12,
-              fontWeight: 600,
-            },
-            axisLabel: {
-              color: yAxisLabelColor,
-              fontStyle: axisFont.fontStyle,
-              fontWeight: axisFont.fontWeight,
-            },
-          },
+          yAxis: { ...cartesianValueYAxis },
           series: hasMultipleSeries
             ? measureFieldKeys.map((field) => ({
                 name: field,
@@ -759,16 +830,8 @@ const SmartChart = ({
           ...baseOption,
           xAxis: categoryXAxis,
           yAxis: {
-            type: 'value',
-            name: yAxisName,
-            nameLocation: 'middle',
+            ...cartesianValueYAxis,
             nameGap: 18,
-            nameRotate: 90,
-            nameTextStyle: {
-              color: yAxisLabelColor,
-              fontSize: 12,
-              fontWeight: 600,
-            },
           },
           series: hasMultipleSeries
             ? measureFieldKeys.map((field) => ({
@@ -803,6 +866,8 @@ const SmartChart = ({
     config?.xAxisLabelColor,
     config?.yAxisLabelColor,
     config?.axisLabelFontStyle,
+    config?.xAxisTitle,
+    config?.yAxisTitle,
   ]);
 
   const handleClick = (e) => {
@@ -1079,6 +1144,8 @@ SmartChart.propTypes = {
     selectedFields: PropTypes.array,
     sortBy: PropTypes.string,
     sortOrder: PropTypes.string,
+    xAxisTitle: PropTypes.string,
+    yAxisTitle: PropTypes.string,
   }).isRequired,
   isSelected: PropTypes.bool,
   onSelect: PropTypes.func,
