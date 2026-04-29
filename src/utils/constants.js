@@ -28,3 +28,4 @@ export const ApiVersion = process.env.NEXT_PUBLIC_API_VERSION;
 export const STORAGE_KEY = 'powerbi-dashboard';
 export const RECENT_DASHBOARDS_STORAGE_KEY = 'powerbi-recent-dashboard-ids';
 export const LAST_SAVED_HASH_KEY = 'powerbi-last-saved-hash';
+export const STACKED_BAR_CHART_KEY = 'stackedBar';
