@@ -354,9 +354,17 @@ ToolbarDropdown.propTypes = {
   disabled: PropTypes.bool,
 };
 
+const DRIVE_PROGRESS_STAGES = [
+  'Validating Google Drive link',
+  'Downloading file from Google Drive',
+  'Parsing imported data',
+];
+
 const DashboardToolbar = ({
   collectionInput,
   onCollectionChange,
+  onUpload,
+  onUploadFromDrive,
   onExportJSON,
   onExportPDF,
   onPrint,
@@ -369,7 +377,6 @@ const DashboardToolbar = ({
   accessModeLabel = '',
   canSave = true,
   saveStatus,
-  fileInputRef,
   recordCount,
   onViewData,
   dashboardName,
@@ -400,6 +407,16 @@ const DashboardToolbar = ({
   const loadSearchInputRef = useRef(null);
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
   const [accessModalRow, setAccessModalRow] = useState(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [driveLink, setDriveLink] = useState('');
+  const [driveCollectionName, setDriveCollectionName] = useState('');
+  const [driveBusy, setDriveBusy] = useState(false);
+  const [driveError, setDriveError] = useState('');
+  const [driveStatus, setDriveStatus] = useState('idle');
+  const [driveStageIndex, setDriveStageIndex] = useState(0);
+  const [driveStatusMessage, setDriveStatusMessage] = useState('');
+  const [driveCloseConfirmOpen, setDriveCloseConfirmOpen] = useState(false);
+  const driveAbortRef = useRef(null);
   const dropdownRef = useRef(null);
   const filterDropdownRef = useRef(null);
 
@@ -466,6 +483,21 @@ const DashboardToolbar = ({
   }, [loadModalOpen]);
 
   useEffect(() => {
+    if (!uploadModalOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        if (driveBusy) {
+          setDriveCloseConfirmOpen(true);
+          return;
+        }
+        setUploadModalOpen(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [uploadModalOpen, driveBusy]);
+
+  useEffect(() => {
     if (!loadModalOpen) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -473,6 +505,31 @@ const DashboardToolbar = ({
       document.body.style.overflow = prev;
     };
   }, [loadModalOpen]);
+
+  useEffect(() => {
+    if (!uploadModalOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [uploadModalOpen]);
+
+  useEffect(() => {
+    if (!driveBusy) return undefined;
+    setDriveStageIndex(0);
+    setDriveStatus('validating');
+    setDriveStatusMessage(DRIVE_PROGRESS_STAGES[0]);
+    const id = window.setInterval(() => {
+      setDriveStageIndex((prev) => {
+        const next = Math.min(prev + 1, DRIVE_PROGRESS_STAGES.length - 1);
+        setDriveStatus(next === 1 ? 'downloading' : 'parsing');
+        setDriveStatusMessage(DRIVE_PROGRESS_STAGES[next]);
+        return next;
+      });
+    }, 2200);
+    return () => window.clearInterval(id);
+  }, [driveBusy]);
 
   useEffect(() => {
     if (!loadModalOpen) return undefined;
@@ -579,6 +636,14 @@ const DashboardToolbar = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!collectionInput) return;
+    setCollections((prevCollections) => {
+      if (prevCollections.includes(collectionInput)) return prevCollections;
+      return [...prevCollections, collectionInput];
+    });
+  }, [collectionInput]);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -635,6 +700,115 @@ const DashboardToolbar = ({
     setFilterDraft((d) => ({ ...d, ...updates }));
 
   const toolbarRestricted = Boolean(readOnly);
+
+  const validateDriveLink = (link) => {
+    const v = String(link || '').trim();
+    if (!v) return 'Google Drive link is required';
+    try {
+      const u = new URL(v);
+      if (!['https:', 'http:'].includes(u.protocol))
+        return 'Only http/https links are supported';
+      if (!['drive.google.com', 'docs.google.com'].includes(u.hostname))
+        return 'Only Google Drive links are allowed';
+      return '';
+    } catch {
+      return 'Invalid URL format';
+    }
+  };
+
+  const validateCollectionName = (name) => {
+    const v = String(name || '').trim();
+    if (!v) return '';
+    if (v.length > 80) return 'Collection name must be 80 characters or less';
+    if (!/^[a-zA-Z0-9 _-]+$/.test(v)) {
+      return 'Use only letters, numbers, space, underscore, or hyphen';
+    }
+    return '';
+  };
+
+  const resetDriveModalState = useCallback(() => {
+    setDriveBusy(false);
+    setDriveError('');
+    setDriveLink('');
+    setDriveCollectionName('');
+    setDriveStatus('idle');
+    setDriveStageIndex(0);
+    setDriveStatusMessage('');
+    setDriveCloseConfirmOpen(false);
+  }, []);
+
+  const handleOpenDriveModal = useCallback(() => {
+    setUploadModalOpen(true);
+    resetDriveModalState();
+  }, [resetDriveModalState]);
+
+  const handleCloseDriveModal = useCallback(() => {
+    if (driveBusy) {
+      setDriveCloseConfirmOpen(true);
+      return;
+    }
+    setUploadModalOpen(false);
+    resetDriveModalState();
+  }, [driveBusy, resetDriveModalState]);
+
+  const handleConfirmCloseWhileBusy = useCallback(() => {
+    driveAbortRef.current?.abort();
+    driveAbortRef.current = null;
+    setDriveCloseConfirmOpen(false);
+    setUploadModalOpen(false);
+    resetDriveModalState();
+  }, [resetDriveModalState]);
+
+  const handleDriveImport = async () => {
+    const validationError = validateDriveLink(driveLink);
+    if (validationError) {
+      setDriveError(validationError);
+      setDriveStatus('error');
+      setDriveStatusMessage(validationError);
+      return;
+    }
+    const collectionError = validateCollectionName(driveCollectionName);
+    if (collectionError) {
+      setDriveError(collectionError);
+      setDriveStatus('error');
+      setDriveStatusMessage(collectionError);
+      return;
+    }
+    setDriveBusy(true);
+    setDriveError('');
+    setDriveCloseConfirmOpen(false);
+    const controller = new AbortController();
+    driveAbortRef.current = controller;
+    try {
+      await onUploadFromDrive?.({
+        driveLink: driveLink.trim(),
+        collectionName: String(driveCollectionName || '').trim() || undefined,
+        signal: controller.signal,
+      });
+      setDriveStatus('success');
+      setDriveStatusMessage('Google Drive import completed successfully');
+    } catch (error) {
+      if (
+        error?.code === 'ERR_CANCELED' ||
+        error?.name === 'CanceledError' ||
+        controller.signal.aborted
+      ) {
+        setDriveStatus('idle');
+        setDriveError('');
+        setDriveStatusMessage('');
+        return;
+      }
+      const msg = error?.message || 'Failed to import from Google Drive';
+      setDriveError(msg);
+      setDriveStatus('error');
+      setDriveStatusMessage(msg);
+    } finally {
+      if (driveAbortRef.current === controller) {
+        driveAbortRef.current = null;
+      }
+      setDriveBusy(false);
+    }
+  };
 
   return (
     <header
@@ -732,7 +906,7 @@ const DashboardToolbar = ({
           <ToolbarButton
             icon={AiOutlineCloudUpload}
             label='Upload'
-            onClick={() => fileInputRef?.current?.click()}
+            onClick={onUpload}
             variant='success'
             disabled={readOnly}
             title={
@@ -740,6 +914,15 @@ const DashboardToolbar = ({
                 ? 'Read-only (Viewer): upload disabled'
                 : 'Upload CSV, JSON, or XLSX data'
             }
+          />
+        </div>
+        <div className={styles.toolbarGroup}>
+          <ToolbarButton
+            icon={AiOutlineCloudUpload}
+            label='Drive'
+            onClick={handleOpenDriveModal}
+            disabled={readOnly}
+            title='Import CSV, JSON, or XLSX from Google Drive link'
           />
         </div>
 
@@ -1130,6 +1313,166 @@ const DashboardToolbar = ({
         onAccessUpdated={handleAccessUpdated}
       />
 
+      {uploadModalOpen && (
+        <div
+          className={styles.driveModalBackdrop}
+          role='dialog'
+          aria-modal='true'
+          aria-labelledby='upload-dialog-title'
+          aria-describedby='upload-dialog-description'
+          onMouseDown={handleCloseDriveModal}
+        >
+          <div
+            className={styles.driveModalPanel}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className={styles.driveModalHeader}>
+              <h2 id='upload-dialog-title' className={styles.driveModalTitle}>
+                Import from Google Drive
+              </h2>
+              <button
+                type='button'
+                className={styles.driveModalClose}
+                onClick={handleCloseDriveModal}
+                aria-label='Close'
+              >
+                <AiOutlineClose size={18} aria-hidden />
+              </button>
+            </div>
+            <div className={styles.driveModalBody}>
+              <p
+                id='upload-dialog-description'
+                className={styles.driveModalHint}
+              >
+                Paste a Google Drive or Google Sheets shareable link.
+              </p>
+              <div className={styles.driveFormGroup}>
+                <label className={styles.uploadLabel}>Google Drive link</label>
+                <input
+                  type='url'
+                  className={styles.uploadInput}
+                  placeholder='https://drive.google.com/file/d/...'
+                  value={driveLink}
+                  onChange={(e) => {
+                    setDriveLink(e.target.value);
+                    if (driveError) setDriveError('');
+                    if (driveStatus === 'error') setDriveStatus('idle');
+                  }}
+                  disabled={driveBusy}
+                />
+              </div>
+              <div className={styles.driveFormGroup}>
+                <label className={styles.uploadLabel}>
+                  Collection name (optional)
+                </label>
+                <input
+                  type='text'
+                  className={styles.uploadInput}
+                  placeholder='Optional override (defaults to drive_fileId)'
+                  value={driveCollectionName}
+                  onChange={(e) => {
+                    setDriveCollectionName(e.target.value);
+                    if (driveError) setDriveError('');
+                    if (driveStatus === 'error') setDriveStatus('idle');
+                  }}
+                  disabled={driveBusy}
+                />
+              </div>
+              {driveBusy ? (
+                <div
+                  className={styles.driveStatusInfo}
+                  role='status'
+                  aria-live='polite'
+                >
+                  <span className={styles.driveSpinner} aria-hidden />
+                  <div className={styles.driveStatusTextWrap}>
+                    <div className={styles.driveStatusLabel}>
+                      {DRIVE_PROGRESS_STAGES[driveStageIndex]}
+                    </div>
+                    <div className={styles.driveStatusSubLabel}>
+                      Keep this dialog open while import is in progress.
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              {!driveBusy && driveStatus === 'success' ? (
+                <div
+                  className={styles.driveStatusSuccess}
+                  role='status'
+                  aria-live='polite'
+                >
+                  {driveStatusMessage}
+                </div>
+              ) : null}
+              {!driveBusy && driveStatus === 'error' && driveError ? (
+                <div className={styles.uploadError} role='alert'>
+                  {driveError}
+                </div>
+              ) : null}
+              <div className={styles.uploadActions}>
+                <button
+                  type='button'
+                  className={styles.uploadSecondaryBtn}
+                  onClick={handleCloseDriveModal}
+                >
+                  {driveBusy ? 'Cancel' : 'Close'}
+                </button>
+                {!driveBusy && driveStatus === 'error' ? (
+                  <button
+                    type='button'
+                    className={styles.uploadSecondaryBtn}
+                    onClick={handleDriveImport}
+                  >
+                    Retry
+                  </button>
+                ) : null}
+                <button
+                  type='button'
+                  className={styles.uploadPrimaryBtn}
+                  onClick={handleDriveImport}
+                  disabled={driveBusy}
+                >
+                  {driveBusy
+                    ? 'Importing...'
+                    : driveStatus === 'success'
+                      ? 'Import Again'
+                      : 'Start Import'}
+                </button>
+              </div>
+              {driveCloseConfirmOpen ? (
+                <div className={styles.driveConfirmOverlay}>
+                  <div className={styles.driveConfirmPanel}>
+                    <h3 className={styles.driveConfirmTitle}>
+                      Close import dialog?
+                    </h3>
+                    <p className={styles.driveConfirmText}>
+                      Upload is in progress. Closing this modal hides progress
+                      updates.
+                    </p>
+                    <div className={styles.uploadActions}>
+                      <button
+                        type='button'
+                        className={styles.uploadSecondaryBtn}
+                        onClick={() => setDriveCloseConfirmOpen(false)}
+                      >
+                        Continue Import
+                      </button>
+                      <button
+                        type='button'
+                        className={styles.uploadPrimaryBtn}
+                        onClick={handleConfirmCloseWhileBusy}
+                      >
+                        Close Modal
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* shareUrl is used only to enable/disable the Share action */}
     </header>
   );
@@ -1139,6 +1482,7 @@ DashboardToolbar.propTypes = {
   collectionInput: PropTypes.string.isRequired,
   onCollectionChange: PropTypes.func.isRequired,
   onUpload: PropTypes.func.isRequired,
+  onUploadFromDrive: PropTypes.func,
   onExportJSON: PropTypes.func.isRequired,
   onExportPDF: PropTypes.func.isRequired,
   onPrint: PropTypes.func.isRequired,
@@ -1151,7 +1495,6 @@ DashboardToolbar.propTypes = {
   accessModeLabel: PropTypes.string,
   canSave: PropTypes.bool,
   saveStatus: PropTypes.string,
-  fileInputRef: PropTypes.oneOfType([PropTypes.object, PropTypes.func]),
   recordCount: PropTypes.number,
   onViewData: PropTypes.func,
   dashboardName: PropTypes.string,

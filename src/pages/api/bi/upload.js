@@ -11,7 +11,8 @@ import { getBackendBaseUrl } from '@/services/http/backendClient';
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '50mb',
+      // Raw file max is MAX_UPLOAD_FILE_BYTES (~50MB); JSON body is larger (base64 ~4/3).
+      sizeLimit: process.env.MAX_UPLOAD_BODY_LIMIT?.trim() || '100mb',
     },
   },
 };
@@ -41,7 +42,13 @@ export default async function handler(req, res) {
         collectionName,
       },
       {
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(req.headers.cookie ? { cookie: req.headers.cookie } : {}),
+        },
+        maxBodyLength: Infinity,
+        maxContentLength: Infinity,
+        timeout: 900000,
         validateStatus: () => true,
       }
     );

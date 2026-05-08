@@ -17,7 +17,22 @@ export function syncDashboard(dashboardId, payload = {}) {
 }
 
 export function uploadBiFile(payload) {
-  return nextApi.post('/api/bi/upload', payload);
+  return nextApi.post('/api/bi/upload', payload, {
+    timeout: 900000,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  });
+}
+
+export function uploadGoogleDriveLink(payload, config = {}) {
+  return nextApi.post('/api/bi/upload/google-drive-link', payload, config);
+}
+
+export function getUploadJob(jobId, config = {}) {
+  return nextApi.get(
+    `/api/bi/upload/jobs/${encodeURIComponent(String(jobId))}`,
+    config
+  );
 }
 
 export function postBiQuery(body) {

@@ -37,10 +37,12 @@ import ShareDashboardModal from './ShareDashboardModal';
 import { meRequest, logoutRequest } from '@/services/authService';
 import {
   getDashboardsList,
+  getUploadJob,
   saveDashboard,
   getDashboardById,
   syncDashboard,
   uploadBiFile,
+  uploadGoogleDriveLink,
 } from '@/services/biService';
 import {
   BI_UI,
@@ -58,8 +60,10 @@ import {
   RECENT_DASHBOARDS_STORAGE_KEY,
   LAST_SAVED_HASH_KEY,
   APP_NAME,
+  MAX_UPLOAD_FILE_BYTES,
 } from '@/utils/constants';
 import {
+  destroyMessage,
   errorMessage,
   infoMessage,
   loadingMessage,
@@ -566,9 +570,234 @@ const BiDashboard = () => {
       setRecordCount(null);
     }
   }, []);
+
+  const handleGoogleDriveUpload = useCallback(
+    async ({ driveLink, collectionName, signal }) => {
+      if (isReadOnly) {
+        errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
+        return;
+      }
+      const link = String(driveLink || '').trim();
+      if (!link) {
+        throw new Error('Google Drive link is required');
+      }
+
+      const uploadToastKey = 'upload-data';
+      const isCancelled = () => Boolean(signal?.aborted);
+      const throwIfCancelled = () => {
+        if (!isCancelled()) return;
+        const abortErr = new Error('Import cancelled');
+        abortErr.code = 'ERR_CANCELED';
+        throw abortErr;
+      };
+      setSaveStatus('Validating Google Drive link...');
+      loadingMessage('Starting Google Drive import…', uploadToastKey);
+
+      let createRes;
+      try {
+        throwIfCancelled();
+        createRes = await uploadGoogleDriveLink(
+          {
+            driveLink: link,
+            collectionName: collectionName || undefined,
+            clientRequestId: `gdrive-${Date.now()}`,
+          },
+          signal ? { signal } : {}
+        );
+        throwIfCancelled();
+      } catch (error) {
+        if (error?.code === 'ERR_CANCELED' || isCancelled()) {
+          destroyMessage(uploadToastKey);
+          setSaveStatus('');
+          return;
+        }
+        const msg =
+          error?.response?.data?.error ||
+          error?.message ||
+          'Unable to start Google Drive import';
+        updateMessage({
+          type: 'error',
+          text: msg,
+          key: uploadToastKey,
+          duration: 3,
+        });
+        setSaveStatus(msg);
+        setTimeout(() => setSaveStatus(''), 3000);
+        throw new Error(msg);
+      }
+
+      if (!isHttpSuccessStatus(createRes.status)) {
+        const msg =
+          createRes?.data?.error ||
+          `Unable to start import (${createRes.status})`;
+        updateMessage({
+          type: 'error',
+          text: msg,
+          key: uploadToastKey,
+          duration: 3,
+        });
+        setSaveStatus(msg);
+        setTimeout(() => setSaveStatus(''), 3000);
+        throw new Error(msg);
+      }
+
+      const started = createRes.data || {};
+      if (started.status === 'completed' && started.result?.collection) {
+        dispatch(setCollection(started.result.collection));
+        if (
+          Array.isArray(started.result.schema) &&
+          started.result.schema.length
+        ) {
+          handleFieldsLoaded({
+            fields: started.result.schema,
+            recordCount: started.result.recordCount,
+          });
+        }
+        const msg = FORMAT_UPLOAD_NEW(
+          started.result.recordCount || 0,
+          started.result.collection
+        );
+        updateMessage({
+          type: 'success',
+          text: msg,
+          key: uploadToastKey,
+          duration: 2.5,
+        });
+        setSaveStatus(msg);
+        setTimeout(() => setSaveStatus(''), 2500);
+        return;
+      }
+
+      const jobId = started.jobId;
+      if (!jobId) {
+        const msg = 'Upload job was created without job id';
+        updateMessage({
+          type: 'error',
+          text: msg,
+          key: uploadToastKey,
+          duration: 3,
+        });
+        setSaveStatus(msg);
+        setTimeout(() => setSaveStatus(''), 3000);
+        throw new Error(msg);
+      }
+
+      const maxAttempts = 120;
+      let consecutivePollFailures = 0;
+      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        throwIfCancelled();
+        await new Promise((resolve) =>
+          setTimeout(resolve, attempt < 10 ? 900 : 1500)
+        );
+        throwIfCancelled();
+        let statusRes;
+        try {
+          statusRes = await getUploadJob(jobId, signal ? { signal } : {});
+          consecutivePollFailures = 0;
+        } catch (error) {
+          if (error?.code === 'ERR_CANCELED' || isCancelled()) {
+            destroyMessage(uploadToastKey);
+            setSaveStatus('');
+            return;
+          }
+          consecutivePollFailures += 1;
+          if (consecutivePollFailures >= 10) {
+            const msg = 'Unable to fetch import status. Please retry.';
+            updateMessage({
+              type: 'error',
+              text: msg,
+              key: uploadToastKey,
+              duration: 3,
+            });
+            setSaveStatus(msg);
+            setTimeout(() => setSaveStatus(''), 3000);
+            throw new Error(msg);
+          }
+          continue;
+        }
+        if (!isHttpSuccessStatus(statusRes.status)) continue;
+
+        const statusPayload = statusRes.data || {};
+        const stage = statusPayload.stage || 'Processing';
+        const progress =
+          typeof statusPayload.progress === 'number'
+            ? Math.max(0, Math.min(100, statusPayload.progress))
+            : 0;
+        const stageMsg = `${stage}${progress ? ` (${progress}%)` : ''}`;
+        setSaveStatus(stageMsg);
+        updateMessage({
+          type: 'loading',
+          text: stageMsg,
+          key: uploadToastKey,
+          duration: 0,
+        });
+
+        if (statusPayload.status === 'failed') {
+          const msg =
+            statusPayload?.error?.message ||
+            statusPayload.failureReason ||
+            BI_UI.UPLOAD_FAILED;
+          updateMessage({
+            type: 'error',
+            text: msg,
+            key: uploadToastKey,
+            duration: 3,
+          });
+          setSaveStatus(msg);
+          setTimeout(() => setSaveStatus(''), 3500);
+          throw new Error(msg);
+        }
+
+        if (
+          statusPayload.status === 'completed' &&
+          statusPayload.result?.collection
+        ) {
+          const result = statusPayload.result;
+          dispatch(setCollection(result.collection));
+          if (Array.isArray(result.schema) && result.schema.length > 0) {
+            handleFieldsLoaded({
+              fields: result.schema,
+              recordCount: result.recordCount,
+            });
+          } else if (
+            result.recordCount !== undefined &&
+            result.recordCount !== null
+          ) {
+            setRecordCount(result.recordCount);
+          }
+          const msg = FORMAT_UPLOAD_NEW(
+            result.recordCount || 0,
+            result.collection
+          );
+          updateMessage({
+            type: 'success',
+            text: msg,
+            key: uploadToastKey,
+            duration: 2.5,
+          });
+          setSaveStatus(msg);
+          setTimeout(() => setSaveStatus(''), 2500);
+          return;
+        }
+      }
+
+      const timeoutMsg = 'Google Drive import is taking longer than expected';
+      updateMessage({
+        type: 'warning',
+        text: timeoutMsg,
+        key: uploadToastKey,
+        duration: 3,
+      });
+      setSaveStatus(timeoutMsg);
+      setTimeout(() => setSaveStatus(''), 3000);
+    },
+    [dispatch, handleFieldsLoaded, isReadOnly]
+  );
   // File upload handler - uploads data to backend and creates collection
   const handleFileUpload = useCallback(
     async (event) => {
+      const uploadToastKey = 'upload-data';
+
       if (isReadOnly) {
         errorMessage(BI_UI.READ_ONLY_EDITING_DISABLED);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -582,40 +811,75 @@ const BiDashboard = () => {
       const isCSV = fileName.endsWith('.csv');
       const isXLSX = fileName.endsWith('.xlsx');
 
-      const maxFileSizeBytes = 10 * 1024 * 1024;
+      const maxFileSizeBytes = MAX_UPLOAD_FILE_BYTES;
 
       if (!isJSON && !isCSV && !isXLSX) {
-        errorMessage(
-          `${BI_UI.UNSUPPORTED_FILE_TYPE}. ${BI_UI.FILE_UPLOAD_FORMATS_HINT}`
-        );
+        updateMessage({
+          type: 'error',
+          text: `${BI_UI.UNSUPPORTED_FILE_TYPE}. ${BI_UI.FILE_UPLOAD_FORMATS_HINT}`,
+          key: uploadToastKey,
+          duration: 3,
+        });
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
       if (file.type && !supportedMimes.has(String(file.type).toLowerCase())) {
-        errorMessage(BI_UI.INVALID_FILE_FORMAT);
+        updateMessage({
+          type: 'error',
+          text: BI_UI.INVALID_FILE_FORMAT,
+          key: uploadToastKey,
+          duration: 3,
+        });
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
       if (file.size <= 0) {
-        errorMessage(BI_UI.FILE_EMPTY);
+        updateMessage({
+          type: 'error',
+          text: BI_UI.FILE_EMPTY,
+          key: uploadToastKey,
+          duration: 3,
+        });
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
       if (file.size > maxFileSizeBytes) {
-        errorMessage(`${BI_UI.FILE_TOO_LARGE}. Max 10MB`);
+        const tooLargeMsg = `${BI_UI.FILE_TOO_LARGE}. Max ${(maxFileSizeBytes / (1024 * 1024)).toFixed(0)}MB`;
+        updateMessage({
+          type: 'error',
+          text: tooLargeMsg,
+          key: uploadToastKey,
+          duration: 3,
+        });
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
 
-      setSaveStatus(BI_UI.UPLOADING_FILE);
+      setSaveStatus('Starting file upload…');
+      loadingMessage('Starting file upload…', uploadToastKey);
 
       try {
         let fileContent = '';
         let normalizedType = '';
 
+        const pumpReadProgress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const pct = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            const stageMsg = `Reading file (${pct}%)`;
+            setSaveStatus(stageMsg);
+            updateMessage({
+              type: 'loading',
+              text: stageMsg,
+              key: uploadToastKey,
+              duration: 0,
+            });
+          }
+        };
+
         if (isXLSX) {
           const dataUrl = await new Promise((resolve, reject) => {
             const reader = new FileReader();
+            reader.onprogress = pumpReadProgress;
             reader.onload = () => resolve(String(reader.result || ''));
             reader.onerror = () => reject(new Error(BI_UI.FILE_PARSE_ERROR));
             reader.readAsDataURL(file);
@@ -627,7 +891,13 @@ const BiDashboard = () => {
           fileContent = base64;
           normalizedType = 'xlsx';
         } else {
-          fileContent = await file.text();
+          fileContent = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onprogress = pumpReadProgress;
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error(BI_UI.FILE_PARSE_ERROR));
+            reader.readAsText(file);
+          });
           normalizedType = isJSON ? 'json' : 'csv';
         }
 
@@ -717,6 +987,12 @@ const BiDashboard = () => {
                 setDashboardLogo(null);
               }
               if (parsedData.name) setDashboardName(parsedData.name);
+              updateMessage({
+                type: 'success',
+                text: BI_UI.DASHBOARD_LOADED_OK,
+                key: uploadToastKey,
+                duration: 2.5,
+              });
               setSaveStatus(BI_UI.DASHBOARD_LOADED_OK);
               setTimeout(() => setSaveStatus(''), 2000);
 
@@ -729,6 +1005,14 @@ const BiDashboard = () => {
             // Not a dashboard config, continue with data upload
           }
         }
+
+        setSaveStatus('Uploading and parsing on server…');
+        updateMessage({
+          type: 'loading',
+          text: 'Uploading and parsing on server…',
+          key: uploadToastKey,
+          duration: 0,
+        });
 
         // Upload data file to backend for parsing and storage
         const response = await uploadBiFile({
@@ -746,7 +1030,14 @@ const BiDashboard = () => {
             !Array.isArray(response.data)
               ? response.data
               : { error: BI_UI.UPLOAD_FAILED };
-          setSaveStatus(errorData.error || BI_UI.UPLOAD_FAILED);
+          const errMsg = errorData.error || BI_UI.UPLOAD_FAILED;
+          updateMessage({
+            type: 'error',
+            text: errMsg,
+            key: uploadToastKey,
+            duration: 3,
+          });
+          setSaveStatus(errMsg);
           setTimeout(() => setSaveStatus(''), 3000);
           if (fileInputRef.current) {
             fileInputRef.current.value = '';
@@ -786,11 +1077,17 @@ const BiDashboard = () => {
           updateMessage({
             type: 'success',
             text: statusMsg,
-            key: 'upload-data',
+            key: uploadToastKey,
             duration: 2.5,
           });
           setSaveStatus(statusMsg);
         } else {
+          updateMessage({
+            type: 'warning',
+            text: BI_UI.UPLOAD_NO_COLLECTION,
+            key: uploadToastKey,
+            duration: 3,
+          });
           setSaveStatus(BI_UI.UPLOAD_NO_COLLECTION);
           setTimeout(() => setSaveStatus(''), 3000);
         }
@@ -799,7 +1096,14 @@ const BiDashboard = () => {
           error?.response?.data?.error ||
           error?.message ||
           BI_UI.FILE_PARSE_ERROR;
-        setSaveStatus(FORMAT_UPLOAD_ERROR(friendlyMessage));
+        const displayMsg = FORMAT_UPLOAD_ERROR(friendlyMessage);
+        updateMessage({
+          type: 'error',
+          text: displayMsg,
+          key: uploadToastKey,
+          duration: 3,
+        });
+        setSaveStatus(displayMsg);
         setTimeout(() => setSaveStatus(''), 3000);
       } finally {
         // Reset file input
@@ -2730,7 +3034,8 @@ const BiDashboard = () => {
       <DashboardToolbar
         collectionInput={collectionInput}
         onCollectionChange={handleCollectionChange}
-        onUpload={handleFileUpload}
+        onUpload={() => fileInputRef.current?.click()}
+        onUploadFromDrive={handleGoogleDriveUpload}
         onExportJSON={handleDownloadJSON}
         onExportPDF={handleDownloadPDF}
         onPrint={handlePrintDashboard}
@@ -2743,7 +3048,6 @@ const BiDashboard = () => {
         readOnly={isReadOnly}
         accessModeLabel={accessModeLabel}
         saveStatus={saveStatus}
-        fileInputRef={fileInputRef}
         recordCount={recordCount}
         exportPdfInProgress={exportPdfInProgress}
         onViewData={() => setViewDataOpen(true)}

@@ -10,7 +10,7 @@ export const HANDLE_SIZE = 2;
 export const PAGE_SIZE = 50;
 
 export const DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
-
+export const MAX_UPLOAD_FILE_BYTES = 52428800; // 50MB
 export const cursorMap = {
   n: 'n-resize',
   ne: 'ne-resize',

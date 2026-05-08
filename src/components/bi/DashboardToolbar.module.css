@@ -255,6 +255,277 @@
   transform: rotate(180deg);
 }
 
+.uploadModeTabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.uploadModeTab {
+  flex: 1;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.uploadModeTabActive {
+  background: #eff6ff;
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
+.uploadPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.uploadHint {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.uploadLabel {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.uploadInput {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.uploadInput:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.uploadError {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.uploadActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.driveModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.driveModalPanel {
+  width: min(640px, calc(100vw - 40px));
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+  box-shadow:
+    0 22px 44px rgba(2, 6, 23, 0.24),
+    0 2px 10px rgba(2, 6, 23, 0.08);
+  overflow: hidden;
+}
+
+.driveModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e6edf5;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.driveModalTitle {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.driveModalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.driveModalClose:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.driveModalBody {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+}
+
+.driveModalHint {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.driveFormGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.driveStatusInfo {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.driveSpinner {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  border: 2px solid #93c5fd;
+  border-top-color: #2563eb;
+  border-radius: 999px;
+  animation: driveSpin 0.9s linear infinite;
+}
+
+.driveStatusTextWrap {
+  min-width: 0;
+}
+
+.driveStatusLabel {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+
+.driveStatusSubLabel {
+  font-size: 12px;
+  color: #1d4ed8;
+  margin-top: 2px;
+}
+
+.driveStatusSuccess {
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.driveConfirmOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.84);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+}
+
+.driveConfirmPanel {
+  width: min(420px, 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
+  padding: 14px;
+}
+
+.driveConfirmTitle {
+  margin: 0;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.driveConfirmText {
+  margin: 8px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+@keyframes driveSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.uploadPrimaryBtn,
+.uploadSecondaryBtn {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.uploadPrimaryBtn {
+  background: #2563eb;
+  color: #fff;
+}
+
+.uploadPrimaryBtn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.uploadSecondaryBtn {
+  border-color: #cbd5e1;
+  color: #334155;
+  background: #fff;
+}
+
+.uploadSecondaryBtn:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+.uploadPrimaryBtn:disabled,
+.uploadSecondaryBtn:disabled,
+.uploadModeTab:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .dropdownMenu {
   position: absolute;
   top: 100%;

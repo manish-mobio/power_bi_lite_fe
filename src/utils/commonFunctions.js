@@ -31,6 +31,11 @@ export const updateMessage = ({ type, text, key = 'global', duration = 2 }) => {
   return message.open({ type, content: text, key, duration });
 };
 
+export const destroyMessage = (key) => {
+  if (key) return message.destroy(key);
+  return message.destroy();
+};
+
 export const supportedMimes = new Set([
   'application/json',
   'text/json',
