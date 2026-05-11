@@ -681,6 +681,139 @@ const SmartChart = ({
         };
       }
 
+      case 'waterfall': {
+        // Waterfall: show Start -> deltas (±) -> Total.
+        // We treat each row's numeric value as a delta, then compute a final total bar.
+        // This matches executive financial-style reporting where intermediate steps can be +/-.
+        const valueKey =
+          measureFieldKeys.length === 1 ? measureFieldKeys[0] : null;
+        const rawSteps = (data || []).map((d) => {
+          const v =
+            typeof d?.value === 'number'
+              ? d.value
+              : valueKey && typeof d?.[valueKey] === 'number'
+                ? d[valueKey]
+                : 0;
+          return { name: String(d?.name ?? ''), delta: v };
+        });
+
+        const steps = rawSteps.filter((s) => s.name);
+        const startName = config?.startLabel
+          ? String(config.startLabel)
+          : 'Start';
+        const totalName = config?.totalLabel
+          ? String(config.totalLabel)
+          : 'Total';
+
+        let running = 0;
+        const namesW = [startName, ...steps.map((s) => s.name), totalName];
+        const deltas = [0, ...steps.map((s) => s.delta), 0];
+
+        // Assist series: pushes each delta bar up to the running subtotal so bars "float".
+        // For negative deltas we float from (running + delta) so it drops correctly.
+        const assist = [0];
+        const subtotalAfter = [0];
+        for (let i = 0; i < steps.length; i += 1) {
+          const dlt = steps[i].delta || 0;
+          const before = running;
+          const after = running + dlt;
+          assist.push(dlt >= 0 ? before : after);
+          running = after;
+          subtotalAfter.push(running);
+        }
+        const total = running;
+        assist.push(0);
+        subtotalAfter.push(total);
+
+        const growthColor = config?.growthColor || '#16a34a';
+        const lossColor = config?.lossColor || '#dc2626';
+        const totalColor = config?.totalColor || '#1d4ed8';
+
+        return {
+          ...baseOption,
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            formatter: (params) => {
+              const p = Array.isArray(params) ? params : [];
+              const idx = p?.[0]?.dataIndex ?? 0;
+              const label = namesW[idx] || '';
+              if (idx === 0) {
+                return `${label}<br/>Value: 0`;
+              }
+              if (idx === namesW.length - 1) {
+                return `${label}<br/>Total: ${total}`;
+              }
+              const delta = deltas[idx] || 0;
+              const subtotal = subtotalAfter[idx] || 0;
+              const sign = delta >= 0 ? '+' : '';
+              return `${label}<br/>Change: ${sign}${delta}<br/>Subtotal: ${subtotal}`;
+            },
+          },
+          grid: {
+            left: gridLeftForCartesian ?? '3%',
+            right: '4%',
+            bottom: gridBottom,
+            top: 44,
+            containLabel: true,
+          },
+          xAxis: {
+            ...categoryXAxis,
+            data: namesW,
+            axisLabel: {
+              ...categoryXAxis.axisLabel,
+              interval: 0,
+              rotate: namesW.some((n) => String(n).length > 12) ? 20 : 0,
+            },
+          },
+          yAxis: { ...cartesianValueYAxis },
+          series: [
+            {
+              name: 'assist',
+              type: 'bar',
+              stack: 'waterfall',
+              itemStyle: { color: 'transparent' },
+              emphasis: { itemStyle: { color: 'transparent' } },
+              data: assist,
+            },
+            {
+              name: 'change',
+              type: 'bar',
+              stack: 'waterfall',
+              data: deltas.map((v, i) => {
+                if (i === 0) return 0;
+                if (i === deltas.length - 1) return total;
+                return v;
+              }),
+              itemStyle: {
+                borderRadius: [4, 4, 0, 0],
+                color: (p) => {
+                  const i = p.dataIndex;
+                  if (i === deltas.length - 1) return totalColor;
+                  const v = deltas[i] || 0;
+                  return v >= 0 ? growthColor : lossColor;
+                },
+              },
+              labelLayout: { hideOverlap: true },
+              label: {
+                show: true,
+                position: 'top',
+                formatter: (p) => {
+                  const i = p.dataIndex;
+                  if (i === 0) return '0';
+                  if (i === deltas.length - 1) return String(total);
+                  const v = deltas[i] || 0;
+                  const sign = v >= 0 ? '+' : '';
+                  return `${sign}${v}`;
+                },
+                color: '#111827',
+                fontSize: 11,
+              },
+            },
+          ],
+        };
+      }
+
       case 'scatter': {
         return {
           ...baseOption,

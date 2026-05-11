@@ -54,9 +54,14 @@ const ConfigPanel = ({
   const isTable = config.type === 'table';
   const isPieOrDonut = config.type === 'pie' || config.type === 'donut';
   const isCard = config.type === 'card';
-  const hasAxis = ['bar', 'line', 'area', 'stackedBar', 'scatter'].includes(
-    config.type
-  );
+  const hasAxis = [
+    'bar',
+    'line',
+    'area',
+    'stackedBar',
+    'waterfall',
+    'scatter',
+  ].includes(config.type);
 
   // Normalise Y-axis metrics (field + aggregation) for axis charts.
   // This keeps a clear separation between:

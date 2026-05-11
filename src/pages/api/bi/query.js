@@ -30,6 +30,82 @@ export default async function handler(req, res) {
       });
     }
 
+    // Table + paginated: fetch the exact slice from backend.
+    // Without this, we only fetch a capped `limit` and then slice in-memory,
+    // which makes jump-to-page return wrong rows (often 1 row at the end).
+    if (isTable) {
+      const isPaginated =
+        config.paginated === true ||
+        String(config.paginated || '').toLowerCase() === 'true' ||
+        String(config.paginated || '') === '1';
+
+      if (isPaginated) {
+        const pageSize = Math.max(
+          1,
+          Math.min(1000, parseInt(config.pageSize, 10) || 50)
+        );
+        const pageIndex = Math.max(0, parseInt(config.pageIndex, 10) || 0);
+
+        const filter = config.filter || {};
+        const qs = new URLSearchParams();
+        qs.set('limit', String(pageSize));
+        qs.set('skip', String(pageIndex * pageSize));
+        qs.set('paginated', 'true');
+
+        if (filter?.field && filter?.type) {
+          qs.set('filterField', filter.field);
+          qs.set('filterType', filter.type);
+          if (filter.type === 'date') {
+            if (filter.from) qs.set('filterFrom', filter.from);
+            if (filter.to) qs.set('filterTo', filter.to);
+          } else if (filter.value) {
+            qs.set('filterValue', filter.value);
+          }
+        }
+
+        let apiPath = `${getBackendBaseUrl}${ApiVersion}/collection/${config.collection}`;
+        let url = `${apiPath}?${qs.toString()}`;
+        let response = await axios.get(url, { validateStatus: () => true });
+
+        if (
+          !isHttpSuccessStatus(response.status) &&
+          response.status === HTTP_STATUS.NOT_FOUND
+        ) {
+          apiPath = config.collection
+            ? `${getBackendBaseUrl}${ApiVersion}/${config.collection}`
+            : `${getBackendBaseUrl}${ApiVersion}`;
+          url = `${apiPath}?${qs.toString()}`;
+          response = await axios.get(url, { validateStatus: () => true });
+        }
+
+        if (!isHttpSuccessStatus(response.status)) {
+          throw new Error(FORMAT_BACKEND_ERROR_STATUS(response.status));
+        }
+
+        const data = response.data || {};
+        const items = Array.isArray(data.rows) ? data.rows : [];
+        const total =
+          typeof data.total === 'number' ? data.total : items.length;
+
+        const rows = getTableData(
+          items,
+          config.selectedFields,
+          config.sortBy,
+          config.sortOrder,
+          config.dimension,
+          config.measure,
+          items.length || pageSize
+        );
+
+        return res.status(HTTP_STATUS.OK).json({
+          rows,
+          total,
+          pageIndex,
+          pageSize,
+        });
+      }
+    }
+
     let apiPath = `${getBackendBaseUrl}${ApiVersion}/collection/${config.collection}`;
     let url = `${apiPath}?limit=${config.limit || 1000}`;
 
@@ -60,16 +136,38 @@ export default async function handler(req, res) {
     }
 
     if (isTable) {
-      const result = getTableData(
-        items,
+      const isPaginated =
+        config.paginated === true ||
+        String(config.paginated || '').toLowerCase() === 'true' ||
+        String(config.paginated || '') === '1';
+      const pageSize = Math.max(
+        1,
+        Math.min(1000, parseInt(config.pageSize, 10) || 50)
+      );
+      const pageIndex = Math.max(0, parseInt(config.pageIndex, 10) || 0);
+
+      // Table mode supports two shapes:
+      // - non-paginated: returns an array of rows (legacy behaviour)
+      // - paginated: returns { rows, total, pageIndex, pageSize }
+      const total = Array.isArray(items) ? items.length : 0;
+      const pageItems = isPaginated
+        ? items.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize)
+        : items;
+
+      const rows = getTableData(
+        pageItems,
         config.selectedFields,
         config.sortBy,
         config.sortOrder,
         config.dimension,
         config.measure,
+        // limit is used only for non-paginated fallbacks / legacy usage
         config.limit
       );
-      return res.status(HTTP_STATUS.OK).json(result);
+
+      return res
+        .status(HTTP_STATUS.OK)
+        .json(isPaginated ? { rows, total, pageIndex, pageSize } : rows);
     }
 
     const pipeline = generatePipeline(config);

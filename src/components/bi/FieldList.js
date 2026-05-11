@@ -9,6 +9,7 @@ import {
   FORMAT_FIELD_LIST_NON_JSON_ERROR,
 } from '@/utils/messages';
 import { getBiSchema } from '@/services/biService';
+import { filterVisibleFields } from '@/utils/fieldVisibility';
 
 const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
   const [fields, setFields] = useState([]);
@@ -36,16 +37,18 @@ const FieldList = ({ collection, onAddChart, onFieldsLoaded }) => {
         if (cancelled) return;
         if (Array.isArray(data)) {
           // Legacy format: just array of fields (no recordCount)
-          setFields(data);
+          const visible = filterVisibleFields(data);
+          setFields(visible);
           if (onFieldsLoaded)
-            onFieldsLoaded({ fields: data, recordCount: null });
+            onFieldsLoaded({ fields: visible, recordCount: null });
         } else if (data?.fields || data?.schema) {
           // New format: object with fields and recordCount
           const fieldsData = data.fields || data.schema || [];
-          setFields(fieldsData);
+          const visible = filterVisibleFields(fieldsData);
+          setFields(visible);
           if (onFieldsLoaded) {
             onFieldsLoaded({
-              fields: fieldsData,
+              fields: visible,
               recordCount:
                 data.recordCount !== undefined ? data.recordCount : null,
             });

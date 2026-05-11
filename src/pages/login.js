@@ -53,48 +53,25 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        background: '#f8fafc',
-      }}
-    >
-      <form
-        onSubmit={onSubmit}
-        style={{
-          width: 360,
-          background: '#fff',
-          border: '1px solid #e5e7eb',
-          borderRadius: 12,
-          padding: 20,
-          boxShadow: '0 10px 25px rgba(0,0,0,0.06)',
-        }}
-      >
-        <h2 style={{ margin: 0, marginBottom: 12, textAlign: 'center' }}>
-          Log in
-        </h2>
-        <label style={{ display: 'block', fontSize: 12, color: '#475569' }}>
-          Email
-        </label>
+    <div className={authForm.authContainer}>
+      <form onSubmit={onSubmit} className={authForm.authCard}>
+        <h2 className={authForm.authTitle}>Log in</h2>
+        <p className={authForm.authSubtitle}>
+          Welcome back! Please enter your details.
+        </p>
+
+        <label className={authForm.inputLabel}>Email</label>
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           type='email'
           required
           disabled={isSubmitting}
-          style={{
-            width: '100%',
-            padding: 10,
-            borderRadius: 8,
-            border: '1px solid #e5e7eb',
-            marginBottom: 10,
-          }}
+          className={authForm.authInput}
+          placeholder='Enter your email'
         />
-        <label style={{ display: 'block', fontSize: 12, color: '#475569' }}>
-          Password
-        </label>
+
+        <label className={authForm.inputLabel}>Password</label>
         <div className={authForm.passwordWrap}>
           <input
             value={password}
@@ -104,6 +81,7 @@ export default function LoginPage() {
             disabled={isSubmitting}
             autoComplete='current-password'
             className={authForm.passwordInput}
+            placeholder='Enter your password'
           />
           <button
             type='button'
@@ -120,6 +98,7 @@ export default function LoginPage() {
             )}
           </button>
         </div>
+
         <button
           type='submit'
           className={authForm.submitBtn}
@@ -135,11 +114,17 @@ export default function LoginPage() {
             'Log in'
           )}
         </button>
-        <div style={{ marginTop: 8, fontSize: 12 }}>
-          <Link href='/forgot-password'>Forgot password?</Link>
-        </div>
-        <div style={{ marginTop: 12, fontSize: 12, color: '#475569' }}>
-          New here? <Link href='/signup'>Create an account</Link>
+
+        <div className={authForm.authLinks}>
+          <Link href='/forgot-password' className={authForm.authLink}>
+            Forgot password?
+          </Link>
+          <div>
+            New here?{' '}
+            <Link href='/signup' className={authForm.authLink}>
+              Create an account
+            </Link>
+          </div>
         </div>
       </form>
     </div>

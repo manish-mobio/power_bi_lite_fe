@@ -30,45 +30,24 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        background: '#f8fafc',
-      }}
-    >
-      <form
-        onSubmit={onSubmit}
-        style={{
-          width: 360,
-          background: '#fff',
-          border: '1px solid #e5e7eb',
-          borderRadius: 12,
-          padding: 20,
-          boxShadow: '0 10px 25px rgba(0,0,0,0.06)',
-        }}
-      >
-        <h2 style={{ margin: 0, marginBottom: 12, textAlign: 'center' }}>
-          Forgot password
-        </h2>
-        <label style={{ display: 'block', fontSize: 12, color: '#475569' }}>
-          Email
-        </label>
+    <div className={authForm.authContainer}>
+      <form onSubmit={onSubmit} className={authForm.authCard}>
+        <h2 className={authForm.authTitle}>Forgot password</h2>
+        <p className={authForm.authSubtitle}>
+          Enter your email to receive a reset link.
+        </p>
+
+        <label className={authForm.inputLabel}>Email</label>
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           type='email'
           required
           disabled={isSubmitting}
-          style={{
-            width: '100%',
-            padding: 10,
-            borderRadius: 8,
-            border: '1px solid #e5e7eb',
-            marginBottom: 10,
-          }}
+          className={authForm.authInput}
+          placeholder='Enter your email'
         />
+
         <button
           type='submit'
           className={authForm.submitBtn}
@@ -84,8 +63,14 @@ export default function ForgotPasswordPage() {
             'Send reset link'
           )}
         </button>
-        <div style={{ marginTop: 12, fontSize: 12, color: '#475569' }}>
-          Back to <Link href='/login'>Log in</Link>
+
+        <div className={authForm.authLinks}>
+          <div>
+            Back to{' '}
+            <Link href='/login' className={authForm.authLink}>
+              Log in
+            </Link>
+          </div>
         </div>
       </form>
     </div>

@@ -1,7 +1,7 @@
 /**
  * Power BI Lite - Chart Configuration Types
  * @typedef {'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX'} AggOp
- * @typedef {'bar' | 'line' | 'pie' | 'area' | 'stackedBar' | 'donut' | 'scatter' | 'table'} ChartType
+ * @typedef {'bar' | 'line' | 'pie' | 'area' | 'stackedBar' | 'waterfall' | 'donut' | 'scatter' | 'table'} ChartType
  *
  * @typedef {Object} Measure
  * @property {string} field - The field to calculate (e.g., "price")
@@ -39,6 +39,7 @@ export const CHART_TYPES = [
   'pie',
   'area',
   'stackedBar',
+  'waterfall',
   'donut',
   'scatter',
   'card',
@@ -52,6 +53,7 @@ export const CHART_TYPE_LABELS = {
   pie: 'Pie',
   area: 'Area',
   stackedBar: 'Stacked Bar',
+  waterfall: 'Waterfall',
   donut: 'Donut',
   scatter: 'Scatter',
   card: 'Card',
@@ -64,6 +66,7 @@ export const CHART_TYPE_ICONS = {
   donut: <PieChartOutlined />,
   area: <AreaChartOutlined />,
   stackedBar: <BarChartOutlined />,
+  waterfall: <BarChartOutlined />,
   scatter: <DotChartOutlined />,
   card: <BarChartOutlined />,
   table: <TableOutlined />,

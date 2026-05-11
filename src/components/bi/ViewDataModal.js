@@ -2,7 +2,7 @@
  * Power BI Lite - View Data Modal
  * Shows selected/uploaded collection data in table format
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import PropTypes from 'prop-types';
 import { AiOutlineClose } from 'react-icons/ai';
 import { AgGridReact } from 'ag-grid-react';
@@ -31,6 +31,9 @@ const ViewDataModal = ({
     pageIndex: 0,
     pageSize: PAGE_SIZE,
   });
+  const [jumpPage, setJumpPage] = useState('1');
+  const [jumpError, setJumpError] = useState('');
+  const jumpEditingRef = useRef(false);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearchText, setDebouncedSearchText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,6 +43,8 @@ const ViewDataModal = ({
   useEffect(() => {
     if (!isOpen) return;
     setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+    setJumpPage('1');
+    setJumpError('');
   }, [isOpen, collection, dataFilter]);
 
   useEffect(() => {
@@ -59,6 +64,12 @@ const ViewDataModal = ({
     }, 300);
     return () => clearTimeout(timeoutId);
   }, [searchText]);
+
+  // When search changes, always reset to the first page.
+  useEffect(() => {
+    if (!isOpen) return;
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  }, [isOpen, debouncedSearchText]);
 
   useEffect(() => {
     if (!isOpen || !collection || !fields?.length) {
@@ -208,7 +219,40 @@ const ViewDataModal = ({
     }
     return rows;
   }, [safeGlobalData, globalSearchIndex, normalizedSearch, globalDataReady]);
-  const activeData = isGlobalSearch ? filteredGlobalData : safePageData;
+
+  // Paginate client-side results for global search to keep UX consistent.
+  const activeRowCount = isGlobalSearch
+    ? filteredGlobalData.length
+    : serverRowCount;
+  const totalPages = Math.max(
+    1,
+    Math.ceil((activeRowCount || 0) / pagination.pageSize)
+  );
+  const currentPage = pagination.pageIndex + 1;
+  const canPrev = pagination.pageIndex > 0;
+  const canNext = currentPage < totalPages;
+
+  const activeData = useMemo(() => {
+    if (!isGlobalSearch) return safePageData;
+    const start = pagination.pageIndex * pagination.pageSize;
+    const end = start + pagination.pageSize;
+    return filteredGlobalData.slice(start, end);
+  }, [
+    isGlobalSearch,
+    filteredGlobalData,
+    pagination.pageIndex,
+    pagination.pageSize,
+    safePageData,
+  ]);
+
+  // AG Grid requires stable unique row IDs. When `_id` isn't present in the row,
+  // relying on rowIndex/node can collapse multiple rows into a single rendered row.
+  const gridRowData = useMemo(() => {
+    return (Array.isArray(activeData) ? activeData : []).map((row, idx) => ({
+      ...row,
+      __rowId: `p${pagination.pageIndex}-i${idx}`,
+    }));
+  }, [activeData, pagination.pageIndex]);
   const columnKeys = useMemo(() => {
     if (activeData.length > 0) {
       return Object.keys(activeData[0] || {});
@@ -284,19 +328,49 @@ const ViewDataModal = ({
     }),
     []
   );
-  const totalPages = isGlobalSearch
-    ? 1
-    : Math.max(1, Math.ceil(serverRowCount / pagination.pageSize));
-  const currentPage = isGlobalSearch ? 1 : pagination.pageIndex + 1;
-  const canPrev = pagination.pageIndex > 0;
-  const canNext = currentPage < totalPages;
-  const activeRowCount = isGlobalSearch
-    ? filteredGlobalData.length
-    : serverRowCount;
+
+  // Keep the jump input synced with current page unless user is typing.
+  // IMPORTANT: must be above any early returns to keep hook ordering stable.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (jumpEditingRef.current) return;
+    setJumpError('');
+    setJumpPage(String(currentPage));
+  }, [isOpen, currentPage]);
 
   if (!isOpen) return null;
 
   const canRenderGrid = !error && columnKeys.length > 0 && fields?.length;
+
+  const sanitizePageInput = (raw) => String(raw ?? '').replace(/[^\d]/g, '');
+
+  const clampPage = (n) => {
+    if (!Number.isFinite(n) || n <= 0) return 1;
+    if (n > totalPages) return totalPages;
+    return n;
+  };
+
+  const validatePage = (rawValue) => {
+    const raw = String(rawValue ?? '').trim();
+    if (!raw) return 'Enter page number';
+    if (!/^\d+$/.test(raw)) return 'Only positive integers are allowed';
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n <= 0) return 'Page must be at least 1';
+    return '';
+  };
+
+  const navigateToPage = (rawValue) => {
+    if (loading) return;
+    const err = validatePage(rawValue);
+    if (err) {
+      setJumpError(err);
+      return;
+    }
+    setJumpError('');
+    const n = clampPage(parseInt(String(rawValue).trim(), 10));
+    setJumpPage(String(n));
+    setPagination((prev) => ({ ...prev, pageIndex: n - 1 }));
+  };
 
   return (
     <div
@@ -377,17 +451,14 @@ const ViewDataModal = ({
               >
                 <AgGridReact
                   style={{ width: '100%', height: '100%' }}
-                  rowData={activeData}
+                  rowData={gridRowData}
                   columnDefs={agColumns}
                   defaultColDef={defaultColDef}
                   domLayout='normal'
                   enableBrowserTooltips
                   tooltipShowDelay={200}
                   getRowId={(params) =>
-                    String(
-                      params?.data?._id ??
-                        `${pagination.pageIndex}-${params.rowIndex}`
-                    )
+                    String(params?.data?.__rowId || params?.data?._id || '')
                   }
                   suppressColumnVirtualisation={false}
                   suppressRowVirtualisation={false}
@@ -418,10 +489,52 @@ const ViewDataModal = ({
                   pageIndex: Math.max(0, prev.pageIndex - 1),
                 }))
               }
-              disabled={!canPrev || loading || isGlobalSearch}
+              disabled={!canPrev || loading}
             >
               Prev
             </button>
+            <div className={styles.jumpWrap}>
+              <input
+                type='text'
+                inputMode='numeric'
+                pattern='[0-9]*'
+                className={`${styles.jumpInput} ${jumpError ? styles.jumpInputError : ''}`}
+                placeholder='Enter page'
+                value={jumpPage}
+                onFocus={() => {
+                  jumpEditingRef.current = true;
+                }}
+                onChange={(e) => {
+                  const cleaned = sanitizePageInput(e.target.value);
+                  setJumpPage(cleaned);
+                  if (jumpError) setJumpError('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    navigateToPage(jumpPage);
+                    jumpEditingRef.current = false;
+                  }
+                }}
+                onBlur={() => {
+                  const raw = String(jumpPage ?? '').trim();
+                  jumpEditingRef.current = false;
+                  if (!raw) {
+                    setJumpError('');
+                    setJumpPage(String(currentPage));
+                    return;
+                  }
+                  navigateToPage(raw);
+                }}
+                disabled={loading || totalPages <= 1}
+                aria-label='Jump to page'
+              />
+
+              {jumpError ? (
+                <span className={styles.jumpError} role='alert'>
+                  {jumpError}
+                </span>
+              ) : null}
+            </div>
             <button
               type='button'
               className={styles.secondaryBtn}
@@ -431,10 +544,11 @@ const ViewDataModal = ({
                   pageIndex: prev.pageIndex + 1,
                 }))
               }
-              disabled={!canNext || loading || isGlobalSearch}
+              disabled={!canNext || loading}
             >
               Next
             </button>
+
             <select
               className={styles.pageSizeSelect}
               value={pagination.pageSize}

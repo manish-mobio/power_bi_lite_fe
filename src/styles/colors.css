@@ -1,13 +1,28 @@
 /* colors.css */
 
 :root {
+  /* Core brand colors */
+  --color-primary: #4f46e5; /* Indigo 600 - modern fintech primary */
+  --color-primary-hover: #4338ca; /* Indigo 700 */
+  --color-primary-light: #eef2ff; /* Indigo 50 */
+
+  /* Retaining original variable names for backward compatibility but with new values */
+  --color-blue: #4f46e5; /* Mapping the old primary blue to the new Indigo */
+
+  /* Grayscale / Neutrals */
   --color-white: #ffffff;
-  --color-gray-light: #f0f2f5;
-  --color-gray-medium: #ccc;
-  --color-gray-dark: #667085;
-  --color-gray-darker: #8c8c8c;
-  --color-blue: #34657f;
-  --color-background: #f9f9f9;
-  --color-border: #ddd;
-  --color-font-light: #667085;
+  --color-background: #f8fafc; /* Slate 50 */
+  --color-gray-light: #f1f5f9; /* Slate 100 */
+  --color-gray-medium: #cbd5e1; /* Slate 300 */
+  --color-border: #e2e8f0; /* Slate 200 */
+
+  /* Text colors */
+  --color-font-light: #64748b; /* Slate 500 */
+  --color-gray-dark: #475569; /* Slate 600 */
+  --color-gray-darker: #0f172a; /* Slate 900 - much darker for premium feel */
+
+  /* Status colors */
+  --color-success: #10b981; /* Emerald 500 */
+  --color-error: #ef4444; /* Red 500 */
+  --color-warning: #f59e0b; /* Amber 500 */
 }

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import 'colors.css';
 @import 'font-sizes.css';
 
@@ -12,6 +13,8 @@ body {
   font-size: var(--font-size-medium);
   font-weight: var(--font-weight-normal);
   line-height: var(--line-height-normal);
+  color: var(--color-gray-darker);
+  background-color: var(--color-background);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -27,6 +30,8 @@ body {
   background-color: var(--color-white) !important;
   display: flex;
   flex-direction: column;
+  box-shadow: 1px 0 10px rgba(0, 0, 0, 0.03);
+  z-index: 10;
 }
 
 .collapsed {
@@ -303,12 +308,26 @@ body {
   margin-bottom: 8px;
 }
 .bi-field-item {
-  padding: 8px 12px;
-  font-size: 0.875rem;
+  padding: 8px 14px;
+  font-size: 0.8125rem;
+  font-weight: 500;
   color: var(--color-gray-darker);
   background: var(--color-white);
-  border-radius: 4px;
-  margin-bottom: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px; /* Pill shape */
+  margin-bottom: 6px;
+  cursor: grab;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.bi-field-item:active {
+  cursor: grabbing;
+}
+.bi-field-item:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  transform: translateY(-1px);
 }
 .bi-add-chart-btn {
   width: 100%;
@@ -361,37 +380,61 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 24px;
   min-height: 300px;
-  color: var(--color-gray-dark);
+  color: var(--color-font-light);
   font-size: 1rem;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.5);
+  border: 2px dashed var(--color-border);
+  border-radius: 16px;
+  backdrop-filter: blur(4px);
 }
 .bi-chart-card {
   background: var(--color-white);
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -1px rgba(0, 0, 0, 0.03);
   overflow: hidden;
   cursor: pointer;
-  border: 2px solid transparent;
+  border: 1px solid var(--color-border);
   transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   height: 100%;
   display: flex;
   flex-direction: column;
+  animation: fadeIn 0.4s ease-out;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .bi-chart-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+  box-shadow:
+    0 10px 15px -3px rgba(0, 0, 0, 0.08),
+    0 4px 6px -2px rgba(0, 0, 0, 0.04);
+  border-color: var(--color-gray-medium);
 }
 .bi-chart-selected {
-  border-color: var(--color-blue);
-  box-shadow: 0 0 0 2px rgba(52, 101, 127, 0.2);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 .bi-chart-title {
-  padding: 10px 14px;
-  font-size: 0.813rem;
+  padding: 12px 16px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-gray-darker);
-  background: #f8fafc;
+  background: var(--color-white);
   border-bottom: 1px solid var(--color-border);
   cursor: move;
   display: flex;
@@ -487,9 +530,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 12px;
   min-height: 180px;
   font-size: 0.875rem;
-  color: var(--color-gray-dark);
+  font-weight: 500;
+  color: var(--color-font-light);
+  background: var(--color-background);
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
 }
 .bi-chart-error {
   color: #dc2626;
@@ -520,22 +568,38 @@ body {
   flex: 1;
 }
 .bi-config-row {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+  padding: 14px;
+  background: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 .bi-config-row label {
   display: block;
-  font-size: 0.813rem;
-  font-weight: 500;
-  color: var(--color-gray-dark);
-  margin-bottom: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-gray-darker);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
 }
 .bi-config-row select,
 .bi-config-row input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.875rem;
+  background: var(--color-background);
+  transition: all 0.2s ease;
+}
+.bi-config-row select:focus,
+.bi-config-row input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  background: var(--color-white);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 .bi-remove-chart-btn {
   margin-top: 24px;

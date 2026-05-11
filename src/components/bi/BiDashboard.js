@@ -59,6 +59,7 @@ import {
   LAST_SAVED_HASH_KEY,
   APP_NAME,
 } from '@/utils/constants';
+import { filterVisibleFields } from '@/utils/fieldVisibility';
 import {
   errorMessage,
   infoMessage,
@@ -551,11 +552,11 @@ const BiDashboard = () => {
   const handleFieldsLoaded = useCallback((data) => {
     if (Array.isArray(data)) {
       // Legacy format: just array of fields
-      setFields(data || []);
+      setFields(filterVisibleFields(data || []));
       setRecordCount(null);
     } else if (data && typeof data === 'object') {
       // New format: object with fields and recordCount
-      setFields(data.fields || data.schema || []);
+      setFields(filterVisibleFields(data.fields || data.schema || []));
       setRecordCount(
         data.recordCount !== undefined && data.recordCount !== null
           ? data.recordCount
@@ -582,7 +583,8 @@ const BiDashboard = () => {
       const isCSV = fileName.endsWith('.csv');
       const isXLSX = fileName.endsWith('.xlsx');
 
-      const maxFileSizeBytes = 10 * 1024 * 1024;
+      const maxFileSizeBytes =
+        process.env.NEXT_PUBLIC_MAX_FILE_SIZE * 1024 * 1024;
 
       if (!isJSON && !isCSV && !isXLSX) {
         errorMessage(
@@ -602,7 +604,9 @@ const BiDashboard = () => {
         return;
       }
       if (file.size > maxFileSizeBytes) {
-        errorMessage(`${BI_UI.FILE_TOO_LARGE}. Max 10MB`);
+        errorMessage(
+          `${BI_UI.FILE_TOO_LARGE}. Max ${process.env.NEXT_PUBLIC_MAX_FILE_SIZE}MB`
+        );
         if (fileInputRef.current) fileInputRef.current.value = '';
         return;
       }
@@ -2329,7 +2333,14 @@ const BiDashboard = () => {
       };
 
       const drawAxisFieldsBlock = (pdfInstance, cfg) => {
-        const axisTypes = ['bar', 'line', 'area', 'stackedBar', 'scatter'];
+        const axisTypes = [
+          'bar',
+          'line',
+          'area',
+          'stackedBar',
+          'waterfall',
+          'scatter',
+        ];
         if (!cfg || !axisTypes.includes(cfg.type)) return { topPad: 0 };
 
         const metricDefs =

@@ -11,7 +11,7 @@ import { getBackendBaseUrl } from '@/services/http/backendClient';
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '50mb',
+      sizeLimit: process.env.MAX_UPLOAD_BODY_LIMIT,
     },
   },
 };

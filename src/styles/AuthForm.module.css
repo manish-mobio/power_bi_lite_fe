@@ -1,81 +1,180 @@
+.authContainer {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  padding: 20px;
+}
+
+.authCard {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.1);
+}
+
+.authTitle {
+  margin: 0 0 8px 0;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-gray-darker);
+  letter-spacing: -0.5px;
+}
+
+.authSubtitle {
+  margin: 0 0 32px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-font-light);
+}
+
+.inputLabel {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-gray-dark);
+  margin-bottom: 8px;
+}
+
+.authInput {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  font-size: 15px;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  margin-bottom: 20px;
+}
+
+.authInput:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-light);
+}
+
 .passwordWrap {
   position: relative;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
 }
 
 .passwordInput {
   width: 100%;
-  padding: 10px 40px 10px 10px;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  padding: 12px 48px 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-white);
+  font-size: 15px;
+  transition: all 0.2s ease;
   box-sizing: border-box;
+}
+
+.passwordInput:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-light);
 }
 
 .togglePwd {
   position: absolute;
-  right: 6px;
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   background: none;
   border: none;
   cursor: pointer;
   padding: 6px;
-  color: #64748b;
+  color: var(--color-font-light);
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 0;
+  border-radius: 8px;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease;
 }
 
 .togglePwd:hover {
-  color: #0f172a;
+  color: var(--color-gray-darker);
+  background: var(--color-gray-light);
 }
 
 .togglePwd:focus-visible {
-  outline: 2px solid #0f6cbd;
+  outline: 2px solid var(--color-primary);
   outline-offset: 2px;
-  border-radius: 4px;
 }
 
 .submitBtn {
   width: 100%;
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 14px 20px;
+  border-radius: 12px;
   border: none;
-  background: #0f6cbd;
+  background: var(--color-primary);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 44px;
   box-sizing: border-box;
   transition:
-    opacity 0.15s,
-    box-shadow 0.15s;
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
 }
 
 .submitBtn:hover:not(:disabled) {
-  box-shadow: 0 4px 14px rgba(15, 108, 189, 0.35);
+  background: var(--color-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -6px rgba(79, 70, 229, 0.5);
 }
 
 .submitBtn:disabled {
-  opacity: 0.88;
+  opacity: 0.7;
   cursor: not-allowed;
+  transform: none;
   box-shadow: none;
 }
 
 .btnSpinner {
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
   border-top-color: #fff;
   border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+  animation: spin 0.8s linear infinite;
   flex-shrink: 0;
+}
+
+.authLinks {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--color-gray-dark);
+}
+
+.authLink {
+  color: var(--color-primary);
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.authLink:hover {
+  color: var(--color-primary-hover);
+  text-decoration: underline;
 }
 
 @keyframes spin {
